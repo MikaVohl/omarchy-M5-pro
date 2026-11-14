@@ -39,6 +39,56 @@ Aura applies the exact-26C5035r integration, fixed-clock DCP, and J716s in-memor
 
 Do not mix kernel/modules, loader stages, or manifests from different builds. Keep generated outputs/receipts locally; none belong in Git.
 
+### Experimental open-network Wi-Fi candidate
+
+The qualified baseline rejects open networks before issuing a join. To build the
+opt-in driver experiment without changing that baseline:
+
+```sh
+CONTAINER_RUNTIME=docker bash scripts/build-kernel.sh --open-wifi
+```
+
+This applies `patches/kernel-j716s-open-wifi.patch` with zero fuzz to the pinned
+kernel in the disposable guest. It exports only to
+`outputs/kernel-open-wifi-candidate/`, with release
+`7.3.0-j716s-8ab10100a4c1-open-wifi`. Its build manifest records the patch SHA-256
+and marks the artifacts `unqualified-experimental`. It does not install anything
+on the target or change firmware, boot security, partitions, or running Wi-Fi.
+On hosts without CPU/memory cgroup controllers, set `BUILD_RESOURCE_LIMITS=0`;
+this disables container resource limits, not the kernel's eight-job build limit.
+The runtime must otherwise be configured and accessible to the invoking user.
+
+The patch constructs a no-AKM join without a PMK or RSN element, selects an
+unprotected BSS, and reports its privacy capability correctly. It does not turn
+missing WPA credentials into an open join, allow open 6 GHz, or relax RX checks.
+The no-cipher wire selector and omitted security TLVs remain experimental:
+firmware enums establish open authentication and no AKM, but are not a captured
+native open-network transaction. See [provenance](provenance.md).
+
+Host-only regression checks execute the actual patched join builder, not a
+separate reimplementation. On an already patched source tree:
+
+```sh
+python3 scripts/test-open-wifi.py --source /path/to/patched/kernel
+```
+
+These checks do not contact an AP or prove firmware acceptance, plaintext RX,
+DHCP, or internet access. Before testing a candidate kernel, verify a current
+backup, retained macOS, and a physically boot-tested rescue with independent
+console capture. Preserve the working kernel and complete hash-bound dependency
+closure. The existing baseline deployment tool intentionally rejects this
+different kernel release; do not bypass its guards or run fresh deployment over
+the installed root. The separately reviewed one-shot procedure is documented in
+[recovery](recovery.md#one-shot-open-network-kernel-trial); it validates the actual
+installed receipts and leaves the configured baseline boot payload untouched.
+
+Use your own configurable 2.4/5 GHz AP. Record association, DHCP, bidirectional
+traffic, disconnect/reconnect, then WPA2 and WPA3 regressions with the candidate's
+hashes. The driver is built in, so each new candidate needs a controlled boot;
+firmware failure may require full shutdown/power-on rather than a warm reboot.
+No reinstall, repartitioning, or factory reset is part of this test.
+
+
 ## 4. Prepare your matching firmware
 
 Acquire the complete profile-pinned IPSW locally. For example, with an authorized Apple download and sufficient free space:

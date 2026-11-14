@@ -1,0 +1,182 @@
+--- a/drivers/net/wireless/apple/centauri/t6050/centauri_wifi.c
++++ b/drivers/net/wireless/apple/centauri/t6050/centauri_wifi.c
+@@ -69,6 +69,7 @@
+ 	bool disconnect_pending;
+ 	u16 connect_status, scan_status, disconnect_status;
+ 	struct ieee80211_channel *connect_channel;
++	bool connect_open;
+ 	u8 bssid[ETH_ALEN], connect_payload[1024], request_ie[256];
+ 	u8 ssid[IEEE80211_MAX_SSID_LEN];
+ 	size_t connect_size, request_ie_size, ssid_len;
+@@ -1274,6 +1275,8 @@
+  */
+ #define CONNECT_AUTH_OPEN 0
+ #define CONNECT_AUTH_SAE 3
++/* Protocol-27 AciAkmTypeEnum: AciAkmNone. */
++#define CONNECT_AKM_NONE 0
+ #define CONNECT_AKM_PSK 4
+ #define CONNECT_AKM_SAE 8
+ 
+@@ -1331,37 +1334,53 @@
+ 	struct ieee80211_channel *channel =
+ 		params->channel ?: params->channel_hint;
+ 	struct cfg80211_bss *bss;
+-	const u8 *rsn;
++	const u8 *rsn = NULL;
+ 	u8 rsn_body[255], ssid[35];
+ 	u8 *payload = wifi->connect_payload;
+-	size_t size = 130, rsn_size, rsn_prefix, rsn_tail;
++	size_t size = 130, rsn_size = 0, rsn_prefix, rsn_tail;
+ 	int ret = 0, offset, band;
+ 	u32 akm = connect_akm(&params->crypto);
+-	bool sae = akm == WLAN_AKM_SUITE_SAE, mfpc;
++	bool sae = akm == WLAN_AKM_SUITE_SAE, mfpc = false;
++	bool open = !params->privacy && !params->crypto.wpa_versions &&
++		    !params->crypto.n_akm_suites &&
++		    !params->crypto.n_ciphers_pairwise &&
++		    !params->crypto.cipher_group && !params->crypto.psk &&
++		    !params->crypto.sae_pwd_len && !params->key_len &&
++		    params->mfp != NL80211_MFP_REQUIRED &&
++		    (params->auth_type == NL80211_AUTHTYPE_OPEN_SYSTEM ||
++		     params->auth_type == NL80211_AUTHTYPE_AUTOMATIC);
+ 	u8 password[2 + SAE_PASSWORD_MAX_LEN];
+ 
+-	if (!params->ssid_len || params->ssid_len > 32 || !akm ||
+-	    params->crypto.sae_pwd_len > SAE_PASSWORD_MAX_LEN ||
+-	    params->crypto.n_ciphers_pairwise != 1 ||
+-	    params->crypto.ciphers_pairwise[0] != WLAN_CIPHER_SUITE_CCMP ||
+-	    params->crypto.cipher_group != WLAN_CIPHER_SUITE_CCMP ||
++	if (!params->ssid_len || params->ssid_len > 32 ||
+ 	    params->ie_len > sizeof(wifi->request_ie))
+ 		return -EOPNOTSUPP;
+ 	rsn = cfg80211_find_ie(WLAN_EID_RSN, params->ie, params->ie_len);
+-	if (!rsn)
+-		return -EINVAL;
+-	ret = select_rsn(&params->crypto, akm, rsn + 2, rsn[1], rsn_body);
+-	if (ret < 0)
+-		return ret;
+-	rsn_size = ret;
+-	/*
+-	 * The station's own RSN element carries its management frame
+-	 * protection to the firmware; bit 7 of its capabilities is MFPC.
+-	 */
+-	offset = rsn_caps_offset(rsn_body, rsn_size);
+-	if (offset < 0)
+-		return -EINVAL;
+-	mfpc = get_unaligned_le16(rsn_body + offset) & BIT(7);
++	if (open) {
++		/* Never send a secured association element on a plaintext join. */
++		if (rsn)
++			return -EINVAL;
++	} else {
++		if (!akm ||
++		    params->crypto.sae_pwd_len > SAE_PASSWORD_MAX_LEN ||
++		    params->crypto.n_ciphers_pairwise != 1 ||
++		    params->crypto.ciphers_pairwise[0] != WLAN_CIPHER_SUITE_CCMP ||
++		    params->crypto.cipher_group != WLAN_CIPHER_SUITE_CCMP)
++			return -EOPNOTSUPP;
++		if (!rsn)
++			return -EINVAL;
++		ret = select_rsn(&params->crypto, akm, rsn + 2, rsn[1], rsn_body);
++		if (ret < 0)
++			return ret;
++		rsn_size = ret;
++		/*
++		 * The station's own RSN element carries its management frame
++		 * protection to the firmware; bit 7 of its capabilities is MFPC.
++		 */
++		offset = rsn_caps_offset(rsn_body, rsn_size);
++		if (offset < 0)
++			return -EINVAL;
++		mfpc = get_unaligned_le16(rsn_body + offset) & BIT(7);
++	}
+ 	ret = 0;
+ 	mutex_lock(&wifi->lock);
+ 	if (READ_ONCE(wifi->stopping)) {
+@@ -1379,7 +1398,8 @@
+ 	} else {
+ 		bss = cfg80211_get_bss(wiphy, channel, bssid, params->ssid,
+ 				       params->ssid_len, IEEE80211_BSS_TYPE_ESS,
+-				       IEEE80211_PRIVACY_ON);
++				       open ? IEEE80211_PRIVACY_OFF :
++					      IEEE80211_PRIVACY_ON);
+ 		if (!bss) {
+ 			ret = -ENOENT;
+ 			goto out;
+@@ -1399,6 +1419,7 @@
+ 		goto out;
+ 	}
+ 	wifi->connect_channel = channel;
++	wifi->connect_open = open;
+ 	memcpy(wifi->ssid, params->ssid, params->ssid_len);
+ 	wifi->ssid_len = params->ssid_len;
+ 	memset(payload, 0, sizeof(wifi->connect_payload));
+@@ -1408,10 +1429,12 @@
+ 
+ 	payload[8] = band;
+ 	payload[0x46] = sae ? CONNECT_AUTH_SAE : CONNECT_AUTH_OPEN;
+-	payload[0x47] = sae ? CONNECT_AKM_SAE : CONNECT_AKM_PSK;
+-
+-	put_unaligned_le16(4, payload + 0x48);
+-	if (!sae) {
++	payload[0x47] = open ? CONNECT_AKM_NONE :
++			      sae ? CONNECT_AKM_SAE : CONNECT_AKM_PSK;
++
++	/* Preserve the established protected-join cipher selector (4). */
++	put_unaligned_le16(open ? 0 : 4, payload + 0x48);
++	if (!open && !sae) {
+ 		put_unaligned_le16(32, payload + 0x4a);
+ 		memcpy(payload + 0x4c, params->crypto.psk, 32);
+ 	}
+@@ -1424,7 +1447,8 @@
+ 	ssid[2] = params->ssid_len;
+ 	memcpy(ssid + 3, params->ssid, params->ssid_len);
+ 	append_tlv(payload, &size, 342, ssid, 3 + params->ssid_len);
+-	append_tlv(payload, &size, WLAN_EID_RSN, rsn_body, rsn_size);
++	if (!open)
++		append_tlv(payload, &size, WLAN_EID_RSN, rsn_body, rsn_size);
+ 	if (sae) {
+ 		put_unaligned_le16(params->crypto.sae_pwd_len, password);
+ 		memcpy(password + 2, params->crypto.sae_pwd,
+@@ -1438,15 +1462,21 @@
+ 	append_tlv(payload, &size, 376, mld_defaults, sizeof(mld_defaults));
+ 	wifi->connect_size = size;
+ 
+-	rsn_prefix = rsn - params->ie;
+-	rsn_tail = rsn_prefix + 2 + rsn[1];
+-	memcpy(wifi->request_ie, params->ie, rsn_prefix);
+-	wifi->request_ie[rsn_prefix] = WLAN_EID_RSN;
+-	wifi->request_ie[rsn_prefix + 1] = rsn_size;
+-	memcpy(wifi->request_ie + rsn_prefix + 2, rsn_body, rsn_size);
+-	memcpy(wifi->request_ie + rsn_prefix + 2 + rsn_size,
+-	       params->ie + rsn_tail, params->ie_len - rsn_tail);
+-	wifi->request_ie_size = params->ie_len - rsn[1] + rsn_size;
++	if (open) {
++		if (params->ie_len)
++			memcpy(wifi->request_ie, params->ie, params->ie_len);
++		wifi->request_ie_size = params->ie_len;
++	} else {
++		rsn_prefix = rsn - params->ie;
++		rsn_tail = rsn_prefix + 2 + rsn[1];
++		memcpy(wifi->request_ie, params->ie, rsn_prefix);
++		wifi->request_ie[rsn_prefix] = WLAN_EID_RSN;
++		wifi->request_ie[rsn_prefix + 1] = rsn_size;
++		memcpy(wifi->request_ie + rsn_prefix + 2, rsn_body, rsn_size);
++		memcpy(wifi->request_ie + rsn_prefix + 2 + rsn_size,
++		       params->ie + rsn_tail, params->ie_len - rsn_tail);
++		wifi->request_ie_size = params->ie_len - rsn[1] + rsn_size;
++	}
+ 	WRITE_ONCE(wifi->connect_abort, false);
+ 	wifi->connecting = true;
+ 	wifi->connect_status = 0;
+@@ -1477,7 +1507,9 @@
+ 	memcpy(ie + 2, wifi->ssid, wifi->ssid_len);
+ 	return cfg80211_inform_bss(wifi->wiphy, wifi->connect_channel,
+ 				   CFG80211_BSS_FTYPE_UNKNOWN, wifi->bssid, 0,
+-				   WLAN_CAPABILITY_ESS | WLAN_CAPABILITY_PRIVACY,
++				   WLAN_CAPABILITY_ESS |
++					   (wifi->connect_open ? 0 :
++					    WLAN_CAPABILITY_PRIVACY),
+ 				   100, ie, 2 + wifi->ssid_len, -95 * 100,
+ 				   GFP_KERNEL);
+ }

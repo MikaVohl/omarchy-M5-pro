@@ -28,6 +28,31 @@ The N1 builder checks FTAB bounds, board/production properties, absence of per-u
 
 Physical qualification applies to the original deployed artifacts. It is not inherited by a newly compiled binary simply because its source commit matches.
 
+### Open-network Wi-Fi experiment
+
+`patches/kernel-j716s-open-wifi.patch` is an opt-in change to the pinned kernel,
+not a newly qualified baseline. Public research found no open-join implementation
+in the checked T6050 driver. Aurora's merged
+[PR #1725](https://github.com/aurora-silicon/linux/pull/1725) fixes protected joins
+and diagnostics; it does not add open-network support.
+
+Read-only inspection of the installed N1 FTAB matched the profile's output
+SHA-256 `7f7fe6ce292e925881f8a34d22d590e72dc51faf0d83d6110c2af5ed5bd2e48b`.
+Its embedded metadata defines `AciAuthOpen = 0`, `AciAkmNone = 0`, and internal
+`CORE80211_CIPHER_SUITE_NONE = 0`. The internal cipher enum is **not established
+as the connect-command cipher namespace**: internal AES is 3, while the existing
+working protected join writes 4 at command offset 0x48. The experiment preserves
+that protected-join value and proposes 0 for a plaintext join. Firmware metadata
+does not prove that wire value or the complete open-join TLV shape; native capture
+or physical firmware acceptance is still required.
+
+The inherited TLV 304 join mode remains 5, TLV 316 remains the roaming bitmap
+0, and the TX/RX data path is unchanged. RX completion-footer bit 7 is not
+identified as a decryption flag and must not be bypassed on that assumption.
+No Apple firmware bytes or extracted metadata blobs are published. Host tests
+establish join-builder behavior only, not working hardware support.
+
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

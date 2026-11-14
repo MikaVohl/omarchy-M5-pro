@@ -19,6 +19,16 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Camera / Touch ID | Not qualified | No claim of support |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
+The opt-in open-network Wi-Fi kernel
+`7.3.0-j716s-8ab10100a4c1-open-wifi` booted successfully. Live inspection
+confirmed association to an open AP and successful boot-identity validation;
+a working guest-network connection was reported. This qualifies that observed
+connection, not all open APs, roaming, performance, or physical WPA2/WPA3
+regressions. After the successful trial, the tested payload was selected as the
+persistent default; the original baseline and rescue remain preserved. No
+subsequent normal-default boot has yet been observed.
+See [setup](setup.md#experimental-open-network-wi-fi-candidate).
+
 Obtain and verify a current backup before partitioning or deployment.
 
 ## Why the display configuration differs from a stock setup

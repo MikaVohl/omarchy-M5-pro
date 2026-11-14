@@ -126,7 +126,7 @@ def root_manifest(path, kernel_dir=None):
             "Root image kernel or firmware differs from pinned source profile")
     require(manifest.get("kernel_build_manifest_sha256") == kernel_hash
             and manifest.get("loader_build_manifest_sha256") == loader_hash, "Root image build manifests differ")
-    for name in ("j716s-bind-boot.py", "j716s-firstboot.sh", "m5-omarchy-j716s.sh", "policies/j716s-policy.py"):
+    for name in ("j716s-bind-boot.py", "candidate_boot.py", "j716s-firstboot.sh", "m5-omarchy-j716s.sh", "policies/j716s-policy.py"):
         require(manifest.get("provisioning_policies", {}).get(name, {}).get("sha256") == digest(HERE / name),
                 "Root image runtime guard is stale: " + name)
     for name, expected in kernel["artifacts"].items():

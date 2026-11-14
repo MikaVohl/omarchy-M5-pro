@@ -25,6 +25,7 @@ work/cache/
 work/build/
 work/kernel-build/candidate/
 outputs/kernel-candidate/
+outputs/kernel-open-wifi-candidate/
 outputs/rootfs/
 outputs/firmware/
 outputs/boot-candidate/loader/

@@ -543,6 +543,7 @@ def main():
     library.mkdir(parents=True, exist_ok=True)
     for name in ("m5-omarchy-j716s.sh", "j716s-bind-boot.py", "j716s-firstboot.sh", "j716s-recovery.sh"):
         install_file(here / name, library / name, 0o755)
+    install_file(here / "candidate_boot.py", library / "candidate_boot.py", 0o644)
     for name in ("keys", "policies"):
         shutil.copytree(here / name, library / name, dirs_exist_ok=True)
     with chroot_mounts(root, work / "signed-package-cache"):

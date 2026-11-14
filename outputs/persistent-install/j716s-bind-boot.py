@@ -8,6 +8,8 @@ import subprocess
 import sys
 import uuid
 
+from candidate_boot import validate_boot_selection, validate_running_kernel
+
 LINUX_TYPE = "0fc63daf-8483-4772-8e79-3d69d8477de4"
 ESP_TYPE = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
 
@@ -45,6 +47,7 @@ def atomic(path, value, mode=0o644):
 
 
 def main():
+    require(sys.argv[1:] in ([], ["--check-only"]), "usage: j716s-bind-boot.py [--check-only]")
     require(os.geteuid() == 0, "root is required")
     require(os.uname().machine == "aarch64", "this is not ARM64")
     compatible = Path("/proc/device-tree/compatible").read_bytes().split(b"\0")
@@ -83,7 +86,7 @@ def main():
     require(identity["schema"] == 1 and identity["board"] == "j716s", "unsupported embedded image identity")
     require(guid(identity["filesystem_uuid"]) == fsuuid, "root filesystem UUID differs from the embedded image")
     release = Path("/etc/j716s/kernel.release").read_text().strip()
-    require(identity["kernel_release"] == release == os.uname().release, "running kernel is not the image kernel")
+    require(identity["kernel_release"] == release, "image kernel identity differs")
     require(identity["firmware_build"] == "26C5035r", "unexpected firmware build")
     require(Path("/boot").is_dir() and not Path("/boot").is_symlink(), "unsafe /boot directory")
     mounted = subprocess.run(["mountpoint", "-q", "/boot"]).returncode == 0
@@ -173,7 +176,11 @@ def main():
         require(path.resolve() == path and not path.is_symlink() and path.stat().st_size == entry["size"]
                 and digest(path) == entry["sha256"], "boot dependency differs: " + str(relative))
     require(receipt["stage2_path"] == "aurora/boot.bin", "unexpected stable stage2 path")
-    require(digest("/boot/aurora/boot.bin") == receipt["root_payload_sha256"], "stable stage2 is not the deployed root payload")
+    validate_boot_selection(Path("/"), release, identity, receipt)
+    validate_running_kernel(Path("/"), release, identity, receipt, cmdline)
+    if sys.argv[1:] == ["--check-only"]:
+        print("J716s baseline/trial boot identity checks passed; no remount or growth performed.")
+        return
     # No GPT writes: only the already-mounted and identity-checked filesystem grows.
     subprocess.run(["mount", "-o", "remount,rw", "/"], check=True)
     subprocess.run(["mount", "-o", "remount,rw,nosuid,nodev,noexec,umask=0077", "/boot"], check=True)
