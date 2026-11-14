@@ -13,9 +13,9 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | Bringup kernel enables RFCOMM/LE/BNEP/uinput; RFCOMM socket opens; controller powered | Paired headset disconnected/host down; playback, microphone and media controls remain untested |
+| Bluetooth | Connected headset, audible A2DP playback and user-observed play/pause toast; RFCOMM/BNEP sockets work | HFP mic test failed: pinned transport lacks SCO packet support; LE/PAN traffic and prolonged reconnect remain unqualified |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
-| Video decode / Moonlight | AVD open-queue transport; 48 H.264 frames matched software; Moonlight VA-API startup probe passed | No long-stream, high-resolution, HEVC pixel-correctness, AV1 or VP9 qualification |
+| Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | AVE build/segment mismatch; ANE preload layout mismatch; engines remain guarded | No arbitrary firmware substitution or ABI guard removal |
 | Battery / sensors | Battery, cpufreq and WFI telemetry present | ALS needs same-unit calibration; TTPD is invalid-looking finite firmware data with unknown semantics |
 | Audio | Not qualified | Speakers intentionally disabled; do not remove the safety policy |
@@ -110,6 +110,36 @@ output. Boot-binding success is established by the actual boot service; no
 privileged BNEP socket claim is made. ALS calibration, AVE ABI, camera, ProRes,
 ANE, physical port/charging and suspend limitations remain unchanged. SEP-probe
 was not selected or tested.
+
+## Attended headset and streaming checks — 2026-11-14
+
+The existing headset pairing connected and services resolved. A2DP SBC-XQ
+playback was submitted only to the Bluetooth sink; the owner confirmed hearing
+the louder test audio well. The owner pressed play/pause and volume and observed
+Omarchy's play/pause toast. The bounded AVRCP event reader captured no events in
+its 25-second window, so no device-level event capture or volume-change pass is
+claimed from that reader.
+
+The HFP mSBC profile switched successfully, but microphone recording/playback
+stalled and PipeWire reported Bluetooth audio-transport errors. The recording
+was deleted and stereo mode restored. The pinned `btcentauri_t6050.c`
+`cen_hci_send()` accepts HCI command and ACL packets and rejects other types
+with `-EOPNOTSUPP`; its receive path likewise has no SCO delivery. RFCOMM
+availability does not implement headset voice transport. No microphone pass or
+speculative ring/protocol fix is claimed. Reconnection restored an active
+stereo sink after a transient A2DP endpoint-in-use failure.
+
+Moonlight resumed the already running Sunshine Desktop on the authorized host
+at 1920×1080/60, 20 Mbit/s, hardware H.264 forced. Logs confirmed real video
+packets, VA-API decode through AVD and the EGL/GLES renderer with VA-API backend.
+The owner reported a good desktop stream. The client ran for 4m38s before it was
+closed without issuing a host-app quit. No GPU recovery, AVD timeout/error,
+Oops or SError appeared during the inspected interval. This is a limited
+streaming smoke, not a long-session, other-codec or all-resolution qualification.
+
+One ordinary bringup boot is observed. Repeated ordinary boots and the separate
+SEP cold-boot experiment still require the owner's saved-work and recovery
+workflow. The SEP candidate remains staged and unarmed at this checkpoint.
 
 ## Touch ID investigation — 2026-11-14
 

@@ -206,3 +206,25 @@ Hardware headset listening/microphone/media controls, actual Sunshine/Moonlight
 streaming and repeated ordinary boots still require operator participation.
 The source checkpoint does not promote SEP discovery to Touch ID support.
 
+
+## Attended qualification — 2026-11-14
+
+- Owner-authorized headset connection succeeded; A2DP SBC-XQ and HFP profiles
+  enumerate. The owner confirmed audible louder test audio and a play/pause toast
+  after pressing headset controls. The 25-second AVRCP reader captured no events;
+  no capture-based key/volume result is claimed.
+- The HFP mSBC recording/playback stalled. PipeWire logged Bluetooth transport
+  errors. The private recording was removed and stereo restored; clean
+  reconnection recovered after a transient endpoint-in-use error. Pinned Centauri
+  send/receive code has no SCO transport, so microphone audio remains unsupported
+  despite working RFCOMM signalling. No firmware-ring guess or suppressed error.
+- A paired Sunshine Desktop was resumed without quitting the host app. Moonlight
+  requested/received 1920×1080/60 at 20 Mbit/s with hardware H.264 forced. Logs
+  showed real video packets, AVD VA-API decode and EGL/GLES rendering; the owner
+  reported a good desktop stream. Client lifetime was 4m38s, then it was closed.
+- No GPU recovery, AVD timeout/error, Oops or SError found during the inspected
+  interval. This does not establish prolonged stability or other codec coverage.
+- Remaining operator work: repeated ordinary boots, sustained streaming/reconnect
+  and the separately attended SEP cold-boot discovery. SEP remains unarmed;
+  its SPI sensor, enrollment, persistent selection and enclave writes stay off.
+
