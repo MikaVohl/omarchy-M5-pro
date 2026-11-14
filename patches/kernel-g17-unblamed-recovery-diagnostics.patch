@@ -1,0 +1,53 @@
+Subject: [PATCH] drm/asahi: g17: snapshot retained renders when firmware gives no blame
+
+Base: rolotrealanis98/linux 8ab10100a4c1c944797e3fc8345589aff57777df
+
+The J716s recovery at 2026-11-14 15:28:45 reported scheduling pause
+firmware reason 5, no blamed queue, no sampled slot keys and four
+retained Hyprland commands on queues 6 and 7. The existing bounded
+render snapshot was skipped because it is only called for explicit
+firmware blame. Queue ownership alone cannot show which render stage
+had started, whether the backing manager was growing, or which
+completion stamps had advanced.
+
+Call the same snapshot before acknowledging recovery state 1, selecting
+all retained render pairs when no QID was blamed. Walk pairs, not QIDs,
+so each pair is reported once. Preserve the old exact-QID selection when
+firmware does blame a queue. Only existing retained host mappings are
+read; no allocation, new MMIO probe, scheduling change, timeout change,
+attribution change or release decision is introduced. This is diagnostic
+instrumentation, not a fix for the scheduling pause timeout.
+
+--- a/drivers/gpu/drm/asahi/g17/recovery.rs
++++ b/drivers/gpu/drm/asahi/g17/recovery.rs
+@@ -117,2 +117,3 @@
+-    /// Optional diagnostics only; absence cannot alter attribution or release.
+-    fn report_blamed_render(&self, _qid: u8) {}
++    /// Optional halted-state diagnostics; None selects all retained render pairs.
++    /// Absence cannot alter attribution or release.
++    fn report_recovery_renders(&self, _qid: Option<u8>) {}
+@@ -273,3 +274,1 @@
+-    if let Some(qid) = request.blamed {
+-        host.report_blamed_render(qid);
+-    }
++    host.report_recovery_renders(request.blamed);
+--- a/drivers/gpu/drm/asahi/g17/runtime/events.rs
++++ b/drivers/gpu/drm/asahi/g17/runtime/events.rs
+@@ -276,1 +276,1 @@
+-    fn report_blamed_render(&self, qid: u8) {
++    fn report_recovery_renders(&self, qid: Option<u8>) {
+--- a/drivers/gpu/drm/asahi/g17/runtime/render/recovery.rs
++++ b/drivers/gpu/drm/asahi/g17/runtime/render/recovery.rs
+@@ -9,1 +9,1 @@
+-    pub(in crate::g17::runtime) fn report_render_recovery(&self, qid: u8, port: &crate::g17::port::Port) {
++    pub(in crate::g17::runtime) fn report_render_recovery(&self, qid: Option<u8>, port: &crate::g17::port::Port) {
+@@ -13,1 +13,5 @@
+-            entry.reservation.ids.iter().any(|id| id.qid() == qid)
++            qid.map_or_else(
++                || entry.borrowed_active || entry.constructing
++                    || entry.pair.as_ref().is_some_and(|pair| pair.in_flight()),
++                |qid| entry.reservation.ids.iter().any(|id| id.qid() == qid),
++            )
+@@ -19,1 +23,1 @@
+-                pr_warn!("G17: recovery render queue={} unavailable borrowed={} constructing={}\n",
++                pr_warn!("G17: recovery render queue={:?} unavailable borrowed={} constructing={}\n",

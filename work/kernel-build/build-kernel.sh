@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run only inside the Fedora 43 ARM64 build guest; private signing keys never leave /build.
 set -euo pipefail
-if (( $# != 1 )) || [[ $1 != baseline && $1 != open-wifi ]]; then
-  echo "Usage: $0 {baseline|open-wifi}" >&2
+if (( $# != 1 )) || [[ $1 != baseline && $1 != open-wifi && $1 != bringup ]]; then
+  echo "Usage: $0 {baseline|open-wifi|bringup}" >&2
   exit 2
 fi
 mode=$1
@@ -12,6 +12,10 @@ patch_sha256=
 if [[ $mode == open-wifi ]]; then
   localversion+=-open-wifi
   out=/exchange/outputs/kernel-open-wifi-candidate
+fi
+if [[ $mode == bringup ]]; then
+  localversion+=-bringup
+  out=/exchange/outputs/kernel-bringup-candidate
 fi
 source /root/.cargo/env
 [[ $(uname -m) == aarch64 && $(rpm -E '%{fedora}') == 43 ]]
@@ -23,11 +27,15 @@ archive=/exchange/work/sources/kernel-$commit.tar.gz
 printf '%s  %s\n' 06acab85a9e668010fe9e664d9fc92a15d506a986faab8b9659edd4bbcaaeac2 "$archive" | sha256sum -c -
 tar -xzf "$archive" --strip-components=1 -C /src/linux
 cd /src/linux
-if [[ $mode == open-wifi ]]; then
+if [[ $mode != baseline ]]; then
   candidate_patch=/exchange/patches/kernel-j716s-open-wifi.patch
   patch_sha256=$(sha256sum "$candidate_patch")
   patch_sha256=${patch_sha256%% *}
   patch -p1 --fuzz=0 < "$candidate_patch"
+  if [[ $mode == bringup ]]; then
+    patch -p1 --fuzz=0 < /exchange/patches/kernel-j716s-bluetooth.patch
+    patch -p1 --fuzz=0 < /exchange/patches/kernel-g17-unblamed-recovery-diagnostics.patch
+  fi
 fi
 python3 tools/aurora-bindgen/build.py
 export BINDGEN=/src/linux/tools/aurora-bindgen/build/bin/bindgen
@@ -57,11 +65,16 @@ for name in names:
 (out / 'SHA256SUMS').write_text(''.join(f"{item['sha256']}  {name}\n" for name, item in artifacts.items()))
 manifest = {'schema': 1, 'commit': sys.argv[2],
     'kernel_release': (out / 'kernel.release').read_text().strip(), 'artifacts': artifacts}
-if sys.argv[3] == 'open-wifi':
+if sys.argv[3] != 'baseline':
+    patches = {'kernel-j716s-open-wifi.patch': sys.argv[4]}
+    if sys.argv[3] == 'bringup':
+        for name in ('kernel-j716s-bluetooth.patch', 'kernel-g17-unblamed-recovery-diagnostics.patch'):
+            patch = pathlib.Path('/exchange/patches') / name
+            patches[patch.name] = hashlib.sha256(patch.read_bytes()).hexdigest()
     manifest.update({
-        'variant': 'open-wifi',
+        'variant': sys.argv[3],
         'qualification': 'unqualified-experimental',
-        'patches': {'kernel-j716s-open-wifi.patch': sys.argv[4]},
+        'patches': patches,
     })
 (out / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY

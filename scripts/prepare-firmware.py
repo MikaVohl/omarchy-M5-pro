@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Prepare pinned J716s Linux firmware from a complete, locally supplied IPSW.
 
-Does not download Apple firmware or contact hardware. Outputs contain firmware
-and are private build artifacts, not files to publish or commit.
+Does not download Apple firmware or contact hardware. A separately built open
+AVD candidate can be merged after its exact-board build report is validated.
+Outputs contain Apple firmware and are private artifacts, not files to publish.
 """
 import argparse
 import importlib.util
@@ -24,10 +25,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ipsw", type=Path, required=True, help="complete local IPSW matching profiles/j716s.json")
     parser.add_argument("--installer", type=Path, help="immutable Asahi installer v0.9.1 source; otherwise exact Fedora RPM")
+    parser.add_argument("--avd-firmware-dir", type=Path,
+                        help="optional candidate from prepare-avd-firmware.py; validated before merging")
     parser.add_argument("--output", type=Path, default=PROJECT / "outputs/firmware/j716s-26C5035r-linux")
     args = parser.parse_args()
     if args.output.exists() or args.output.is_symlink():
         raise ValueError("Refusing existing firmware output directory")
+    avd_image, avd_report = None, None
+    if args.avd_firmware_dir is not None:
+        avd = load("j716s_avd", PROJECT / "scripts/prepare-avd-firmware.py")
+        avd_image, avd_report = avd.checked_package(args.avd_firmware_dir)
     trackpad = load("j716s_trackpad", PROJECT / "work/j716s-prep/extract-tpmtfw-reference.py")
     n1 = load("j716s_n1", PROJECT / "reference-source/mk-ftab-w3.py")
     expected = trackpad.profile()
@@ -57,6 +64,13 @@ def main():
                                "apple/tpmtfw-j716s.bin": tp_report["output_sha256"]},
                   "n1_input_member": ftab_path, "n1_manifest_member": manifest_path,
                   "apple_certificate_chain_independently_verified": False}
+    if avd_report is not None:
+        with (args.output / avd.FIRMWARE_NAME).open("xb") as stream:
+            stream.write(avd_image)
+        provenance["firmware"][avd.FIRMWARE_NAME] = avd_report["image"]["sha256"]
+        provenance["avd"] = avd_report
+        with (args.output / "avd-build-report.json").open("x") as stream:
+            stream.write(json.dumps(avd_report, indent=2) + "\n")
     tp_report.update(schema=1, target_model=expected["model"], board=expected["board"],
                      macos_build=expected["macos_build"], ipsw=expected["ipsw"],
                      build_manifest_sha256=build_manifest_sha256)

@@ -1,5 +1,20 @@
 # Changelog
 
+## Discovery-only Touch ID research candidate — 2026-11-14
+
+- Record official and experimental M-series support, J716s driver-admission refusal, live sensor/SEP wiring, read-only APFS/factory-data results, and host-only Aura handoff proof.
+- Add an isolated J716s SEP profile with measured `0x1c000` registration capacity, mandatory non-writing parameters, and a refused transition to sensor/persistent operation; leave J714s and baseline reproduction unchanged.
+- Add a pinned build recipe and non-arming staging tool, preserving baseline configuration, qualified KIS topology, current default and rescue. Bind changed DTB/modules to the build receipt and forbid persistent selection of this probe.
+- Add isolated authorization regressions. SEP attachment, enrollment and matching remain unqualified; the attended reboot is a separately authorized experiment.
+
+## Bringup audit improvements — 2026-11-14
+
+- Close the WirePlumber fallback/pro-audio speaker-route bypass while retaining microphone inputs and dedicated UCM headphone exemption.
+- Add an isolated Bluetooth-capable kernel variant and bounded diagnostic-only G17 recovery snapshots; preserve open-WiFi behavior, baseline/rescue and prior-default rollback.
+- Add exact-profile open AVD firmware building, package validation and guarded installation/removal; verify hardware H.264 frame checksums and Moonlight's app-scoped VA-API startup path.
+- Add read-only per-port USB/PD/DP/USB4, charging and suspend evidence, plus same-unit factory ALS calibration capture/preparation.
+- Record unsupported AVE/ANE/camera/ProRes ABI boundaries rather than weakening hardware guards or claiming enumeration as qualification.
+
 ## Experimental open-network Wi-Fi — 2026-11-14
 
 - Add an opt-in T6050 plaintext join candidate, isolated kernel release/output and patch-hash provenance; leave baseline reproduction unchanged.

@@ -114,3 +114,37 @@ Apple security policy to switch these payloads.
 
 
 See [setup](setup.md) for the exact current CLI sequence and [console capture](console.md) for independent boot evidence.
+
+## Bringup candidate rollback
+
+`scripts/deploy-bringup.py --activate --acknowledge-unbooted-risk` selects the
+experimental Bluetooth/GPU-diagnostics variant only with explicit owner approval.
+It has no guaranteed automatic return to the previous kernel after a failed boot.
+It preserves the previous default and runtime bytes under
+`/var/lib/j716s/bringup-backups/`, with a root-private backup receipt at
+`/etc/j716s/bringup-backup.json`. Baseline and rescue files remain unchanged.
+
+```sh
+sudo python3 -B scripts/deploy-bringup.py --rollback
+```
+
+Rollback verifies the baseline identities and previous payload backup, then
+restores the previous authorized default without consulting the bringup modules.
+It does not unload hardware, change the running kernel or reboot. If the prior
+open-WiFi dependency closure is damaged, refuse rather than silently selecting
+unverified bytes; `scripts/select-open-wifi.py --rollback` independently restores
+the original baseline closure. Retained macOS/Startup Options remain necessary
+when Linux cannot execute either rollback. Do not repartition or alter Apple
+security policy to switch these payloads.
+
+AVD firmware installation is independent of kernel selection. Its rollback
+command removes only the exact file and receipt installed by that tool:
+
+```sh
+sudo python3 -B scripts/install-avd-firmware.py --rollback
+```
+
+Removing firmware does not stop an already loaded decoder. An attended decoder
+hang can require a physical power cycle; host queue tests and a short successful
+decode do not establish safe hardware recovery.
+

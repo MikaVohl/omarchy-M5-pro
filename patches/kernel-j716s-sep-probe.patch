@@ -1,0 +1,156 @@
+--- a/drivers/soc/apple/profile.rs
++++ b/drivers/soc/apple/profile.rs
+@@ -476,6 +476,15 @@
+     ..T6040
+ };
+ 
++/// J716s discovery only: macOS's measured registration capacity, not J714s's.
++pub(crate) const T6050_J716S_PROBE: PlatformProfile = PlatformProfile {
++    name: "T6050/J716s discovery-only",
++    shmem_capacity: 0x1c000,
++    persistent_enrol: false,
++    xart_guard: 2,
++    ..T6050
++};
++
+ /// MacBook Air M4 (J713). The J713 ADT (26.6.2, 25G83) puts the Mesa sensor
+ /// on spi2 at `0x3ad108000`, 8 MHz, chip select 0, with power on the NUB GPIO
+ /// controller (pin 28) and data-ready on AP GPIO 199. The SEP is
+@@ -706,6 +715,9 @@
+     if has(b"apple,t6050") && has(b"apple,j714s") {
+         return Ok(&T6050);
+     }
++    if has(b"apple,t6050") && has(b"apple,j716s") {
++        return Ok(&T6050_J716S_PROBE);
++    }
+     // Only the M4 MacBook Airs: the other T8132 Macs are unread.
+     if has(b"apple,t8132") && (has(b"apple,j713") || has(b"apple,j715")) {
+         return Ok(&T8132);
+@@ -795,6 +807,12 @@
+         assert_eq!(picked(&[b"apple,t6041"]), None);
+         assert_eq!(picked(&[b"apple,j713", b"apple,t6041"]), None);
+         assert_eq!(picked(&[b"apple,j714s", b"apple,t6050"]), Some(T6050.name));
++        assert_eq!(picked(&[b"apple,j716s", b"apple,t6050"]), Some(T6050_J716S_PROBE.name));
++        assert_eq!(picked(&[b"apple,j716s"]), None);
++        assert_eq!(picked(&[b"apple,j716c", b"apple,t6050"]), None);
++        assert!(T6050_J716S_PROBE.shmem_capacity == 0x1c000);
++        assert!(!T6050_J716S_PROBE.persistent_enrol);
++        assert!(T6050.shmem_capacity == 0x40000);
+         assert_eq!(picked(&[b"apple,t6050"]), None);
+     }
+ 
+--- a/drivers/soc/apple/sep.rs
++++ b/drivers/soc/apple/sep.rs
+@@ -2888,6 +2888,9 @@
+ 
+     /// Completes the original attach without sending a second registration.
+     fn complete_attach(&self) -> Result<()> {
++        if self.profile.name == profile::T6050_J716S_PROBE.name {
++            return Err(EPERM);
++        }
+         self.attach_phase.lock().complete(|| self.finish_attach())
+     }
+ 
+@@ -3500,6 +3503,19 @@
+             _dt: {
+                 match profile::detect() {
+                     Ok(p) => {
++                        if p.name == profile::T6050_J716S_PROBE.name {
++                            if module_parameters::xart_writes.value() != 0
++                                || module_parameters::provision_keybag.value() != 0
++                                || module_parameters::trusted_keys.value() != 0
++                                || module_parameters::filevault_api.value() != 0
++                                || module_parameters::xart_guard.value() != 2
++                                || !attach::discovery_only_requested()
++                            {
++                                pr_err!("J716s discovery-only requires xart_writes=0 provision_keybag=0 trusted_keys=0 filevault_api=0 keystore_only=1 xart_guard=2; refusing before DT/DMA/mailbox changes\n");
++                                return Err(EINVAL);
++                            }
++                            pr_info!("J716s SEP safety mode: discovery-only, capacity 0x1c000, xART writes/provisioning/trusted keys/FileVault/sensor/persistence disabled, guard 2; complete_attach forbidden\n");
++                        }
+                         if matches!(p.bootstrap, profile::Bootstrap::WarmRegister) {
+                             dt::enable_sep_and_dart(p.dart_window)?;
+                         }
+--- a/drivers/soc/apple/attach.rs
++++ b/drivers/soc/apple/attach.rs
+@@ -48,6 +48,7 @@
+ extern "C" {
+     fn sep_keystore_only() -> bool;
+     fn sep_keystore_user_bags() -> bool;
++    fn sep_keystore_discovery_only() -> bool;
+     fn sep_complete_attach_register(
+         dev: *mut c_void,
+         ctx: *mut c_void,
+@@ -59,6 +60,11 @@
+ pub(crate) fn requested() -> bool {
+     // SAFETY: the parameter is immutable after module loading.
+     unsafe { sep_keystore_only() }
++}
++
++pub(crate) fn discovery_only_requested() -> bool {
++    // SAFETY: the parameter is immutable after module loading.
++    unsafe { sep_keystore_discovery_only() }
+ }
+ 
+ /// `keystore_only=2`: the initrd also unlocks per-user key bags, so that a
+--- a/drivers/soc/apple/attach_shim.c
++++ b/drivers/soc/apple/attach_shim.c
+@@ -20,6 +20,11 @@
+ bool sep_keystore_user_bags(void)
+ {
+ 	return keystore_only == 2;
++}
++
++bool sep_keystore_discovery_only(void)
++{
++	return keystore_only == 1;
+ }
+ 
+ /* One SEP per machine. device_remove_file drains callbacks before release. */
+--- a/drivers/soc/apple/shim.h
++++ b/drivers/soc/apple/shim.h
+@@ -283,6 +283,7 @@
+ /* Initrd attach and completion; sysfs removal drains the callback. */
+ bool sep_keystore_only(void);
+ bool sep_keystore_user_bags(void);
++bool sep_keystore_discovery_only(void);
+ int sep_complete_attach_register(struct device *dev, void *ctx,
+                                 int (*complete)(void *ctx));
+ void sep_complete_attach_unregister(struct device *dev);
+--- a/arch/arm64/boot/dts/apple/t6050-j716s.dts
++++ b/arch/arm64/boot/dts/apple/t6050-j716s.dts
+@@ -34,6 +34,8 @@
+ 		/* the boot loader reserves the SEP firmware and adds its manifests through this alias */
+ 		/* The loader finds the boot NOR's NVRAM partition through this alias */
+ 		nvram = &nvram;
++		/* Bare Aura forwards the running SEP manifests through this alias. */
++		sep = "/soc@200000000/sep@502600000";
+ 	};
+ 
+ 	chosen {
+@@ -500,16 +502,15 @@
+ 	};
+ };
+ 
+-/*
+- * The SEP (ADT sep, dart-sep): its mailbox, and its power domain with the two
+- * fabric parents left to the firmware, which genpd votes on and never turns off.
+- * The boot loader enables the SEP itself through its alias.
+- */
+-/*
+- * The SEP itself, its mailbox and ps_sep stay off, and there is no "sep" alias:
+- * this machine's boot loader stops ("sep not found in devtree") when the alias
+- * is there, and does not hand the SEP over.
+- */
++/* Discovery-only: reuse the inventory; SEP/DART remain runtime-enabled. */
++&sep_mbox {
++	status = "okay";
++};
++
++&ps_sep {
++	apple,always-on;
++	status = "okay";
++};
+ 
+ &ps_fab8_soc {
+ 	apple,firmware-owned;

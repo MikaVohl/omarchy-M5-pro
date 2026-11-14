@@ -83,6 +83,9 @@ install_policy() {
   install -Dm644 "$here/policies/00-j716s-ownership-guard.hook" /etc/pacman.d/hooks/00-j716s-ownership-guard.hook
   install -Dm644 "$here/policies/00-j716s-remove-guard.hook" /etc/pacman.d/hooks/00-j716s-remove-guard.hook
   install -Dm644 "$here/policies/90-j716s-no-speakers.conf" /etc/wireplumber/wireplumber.conf.d/90-j716s-no-speakers.conf
+  # App-scoped VA-API selection: Aurora DRM is not named asahi, so autodetection
+  # cannot select the separately packaged V4L2-request decoder backend.
+  install -Dm644 "$here/policies/com.moonlight_stream.Moonlight.desktop" /usr/local/share/applications/com.moonlight_stream.Moonlight.desktop
   python "$policy" configure
   mask_hazards
 }

@@ -101,3 +101,108 @@ No reboot was issued. Persistent selection is configured and verified on disk;
 a subsequent ordinary boot without the trial property has not yet been observed
 on hardware. `scripts/select-open-wifi.py --rollback` restores the original
 default without requiring valid candidate modules.
+
+## Bringup audit improvements — 2026-11-14
+
+- The repo and installed WirePlumber policy match by SHA-256. Actual service
+  restart removed the internal fallback playback sink while preserving microphone
+  inputs; no speaker playback was performed. Dedicated UCM headphones remain
+  exempt; generic fallback playback is not exempt.
+- Eight new bringup authorization/publication cases passed. Existing 26 candidate
+  authorization and 14 persistent-selection cases passed, including baseline
+  fallback and failed-publication restoration. The new cases reject unrelated or
+  non-built-in config changes, duplicate config assignments, baseline-config
+  tampering, extra patches and wrong trial paths; failures restore the previous
+  default rather than silently switching to a different baseline.
+- Eleven USB/power/ALS fixture checks and six media image/package parser checks
+  passed. The actual read-only port/suspend campaign plan and baseline snapshot
+  ran; missing ALS/calibration and physical qualification limits remain recorded.
+- A complete Fedora 43 ARM64 LLVM 21.1.8/Rust 1.99.1 bringup kernel build passed.
+  All eight exported artifact hashes passed. Compared to the image-bound baseline,
+  its config changes only BT_BNEP, BT_LE, BT_LE_L2CAP_ECRED, BT_RFCOMM and
+  INPUT_UINPUT from disabled to built-in. It also carries the open-WiFi patch and
+  bounded diagnostic-only G17 recovery patch.
+- Actual target preflight, candidate composition, installed authorization and
+  post-publication boot-guard checks passed. The unbooted bringup payload was
+  selected as `aurora/boot.bin` under explicit owner authorization. Previous
+  default/helper/guard bytes are preserved privately; baseline/rescue and the
+  spent trial marker were not replaced or rearmed. No reboot was performed.
+- The open AVD v5/tier2 image built twice with identical bytes and its upstream
+  host queue test passed. Output was 73,728 bytes, SHA-256
+  `048ebed7ff8c5b07c095c47e975479a9dbf1f8d392cc6b83c0230f7606bf5828`.
+  An interrupted initial installer attempt exposed directory-fd misuse; the
+  atomic writer was corrected, its receipt-only attempt rolled back, and guarded
+  installation/readback succeeded. No unverified firmware was substituted.
+- Under explicit attended authorization, AVD loaded and reported hardware version
+  `40020`, open-queue transport and seven frames in flight. A generated two-second
+  320x180/24 Hz H.264 baseline clip decoded via VA-API through `/dev/video12`
+  and `/dev/media0`; all 48 frame checksums matched software decode. Throwaway
+  clips/logs were removed after proof.
+- Moonlight 6.2.0 was launched with app-scoped `LIBVA_DRIVER_NAME=v4l2_request`
+  and the installed driver directory. It initialized VA-API 1.24, selected the
+  native M5 Pro Vulkan renderer and completed its built-in HEVC Main10 probe.
+  The actual Wayland window was visually inspected without the reported missing
+  hardware-decoder warning. No remote streaming session was started.
+- The GPU collector now uses `--boot=UUID` and timezone-normalized epoch windows.
+  Actual incident journals and privileged host-memory snapshots were retained
+  privately. Its nonzero result records missing PSI/module paths, raced fdinfo
+  and no matching coredump; it is not a stability pass. Firmware reason 5, zero
+  MMU faults and four retained Hyprland commands are confirmed; cause unresolved.
+- Changed shell entrypoints parsed and nine changed Python entrypoints parsed.
+
+Ordinary bringup boot, new Bluetooth profiles, protected Wi-Fi regressions,
+USB/PD/display/tunnel attachment, charging, suspend/resume, decoder recovery,
+high-resolution/long-stream decode and HEVC pixel correctness remain unqualified.
+AVE/ANE/camera/ProRes guards remain intact. Same-unit ALS factory input is absent;
+the impossible-looking finite TTPD value is preserved, not fabricated into a
+temperature. No reboot, suspend, speaker playback, repartitioning or Apple
+security-policy change occurred.
+
+
+## Ordinary bringup boot check — 2026-11-14
+
+- Owner-reported restart; running release is `7.3.0-j716s-8ab10100a4c1-bringup`.
+  Actual boot-binding service completed with status 0; no trial DT property.
+- No failed system/user services or Hyprland config errors. Native G17S Vulkan
+  and DCP enumeration passed; panel is 3456×2234 at 120 Hz, private Mesa/zink
+  compositor environment retained, Wi-Fi associated with bidirectional traffic.
+- AVD automatically exposed video/media nodes. Hardware VA-API H.264 decode
+  matched software checksums for all 48 frames of a fresh two-second test clip.
+  Temporary clips, logs and checksums were removed.
+- Running kernel enables RFCOMM/LE/BNEP/uinput; an unprivileged RFCOMM socket
+  opened and closed without making a connection. The paired headset is down;
+  no headset playback/microphone/media-control qualification was performed.
+- Internal speaker output remains blocked while microphone inputs remain.
+  No GPU-recovery, AVD timeout/error, Oops or SError entries found in this early
+  boot after exercise. No long-soak stability or additional codec claim.
+- A separate privileged manual guard/BNEP socket command timed out without
+  output. The actual boot service, not that command, is the boot-binding proof.
+  No SEP probe, suspend, speaker playback, extra reboot or configuration change.
+
+This observation supersedes the earlier unbooted bringup-default status only;
+remaining physical-device, Bluetooth-profile, recovery and firmware-ABI gaps
+remain unqualified.
+
+
+## Local source checkpoint — 2026-11-14
+
+The checkpoint checks passed: 78 repository authorization/metadata/DT cases,
+six media-firmware parser/security cases and eleven USB/power/ALS fixture cases.
+The already staged SEP candidate passed the actual read-only check from the
+running bringup kernel, including the installed boot guard and exact DT delta;
+it remains unarmed and the persistent default is unchanged.
+
+The staging preflight now admits the explicitly receipt-validated bringup
+release alongside baseline/open-WiFi, avoiding an unnecessary rollback solely
+to inspect the staged probe. No arbitrary kernel release is admitted.
+SEP source/patch/tests are included in the publication inventory. Generated SEP
+kernel outputs and the disposable patched source tree are explicitly ignored;
+Apple firmware, module-signing keys and private target receipts remain excluded.
+Privileged RFCOMM and BNEP protocol sockets opened and closed successfully;
+no remote connection, pairing change, network tunnel or audio playback occurred.
+
+
+Hardware headset listening/microphone/media controls, actual Sunshine/Moonlight
+streaming and repeated ordinary boots still require operator participation.
+The source checkpoint does not promote SEP discovery to Touch ID support.
+

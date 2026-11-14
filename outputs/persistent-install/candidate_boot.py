@@ -1,9 +1,8 @@
-"""Read-only authorization of receipt-bound trial and persistent open-WiFi boots.
+"""Read-only authorization of pinned J716s trial and persistent kernel variants.
 
-Schema 1 (kind j716s-open-wifi-trial) binds trial_id, baseline_identity_sha256,
-baseline_deployment_sha256, kernel_release, the full build_manifest, files and
-modules. Inventory records are {path, size, sha256}; boot paths are ESP-relative,
-module paths are relative to usr/lib/modules/<kernel_release>.
+Schema 1 binds trial_id, baseline identity/deployment digests, the full build
+manifest, ESP files and modules. SEP discovery permits a build-bound DTB only in
+a guarded one-shot trial; bringup binds the exact Bluetooth config delta.
 """
 import hashlib
 import json
@@ -23,6 +22,61 @@ BOOT_FILES = frozenset({"aurora/open-wifi.bin", "aurora/open-wifi/Image.gz",
 BUILD_ARTIFACTS = frozenset({"Image", "Image.gz", "t6050-j716s.dtb", ".config",
                              "System.map", "Module.symvers", "kernel.release",
                              "modules.tar.gz"})
+BRINGUP_RELEASE = BASELINE_RELEASE + "-bringup"
+BLUETOOTH_PATCH_SHA256 = "d4ec8a90431108c3887eb2dd99b29d11aaeca78b92fcaf2a5dccf32d9ff2229b"
+SEP_PROBE_RELEASE = BASELINE_RELEASE + "-sep-probe"
+SEP_PROBE_PATCH_SHA256 = "dee143ac4c83be7f96157a36ada4329f38c032e9c3441298f690f4f8f1abe8b4"
+SEP_PROBE_PARAMETERS = {
+    "apple_sep.xart_writes": "0", "apple_sep.provision_keybag": "0",
+    "apple_sep.xart_guard": "2", "apple_sep.trusted_keys": "0",
+    "apple_sep.filevault_api": "0", "apple_sep.keystore_only": "1",
+}
+BLUETOOTH_CONFIG = frozenset({"CONFIG_BT_BREDR", "CONFIG_BT_LE", "CONFIG_BT_RFCOMM",
+                            "CONFIG_BT_BNEP", "CONFIG_INPUT_MISC", "CONFIG_INPUT_UINPUT"})
+CONFIG_DELTA = BLUETOOTH_CONFIG | {"CONFIG_BT_LE_L2CAP_ECRED"}
+VARIANTS = {
+    "open-wifi": {"release": CANDIDATE_RELEASE, "patches": {"kernel-j716s-open-wifi.patch": PATCH_SHA256}},
+    "bringup": {"release": BRINGUP_RELEASE, "patches": {
+        "kernel-j716s-open-wifi.patch": PATCH_SHA256,
+        "kernel-j716s-bluetooth.patch": BLUETOOTH_PATCH_SHA256,
+        "kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce"}},
+    "sep-probe": {"release": SEP_PROBE_RELEASE, "patches": {
+        "kernel-j716s-open-wifi.patch": PATCH_SHA256,
+        "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256}},
+}
+
+
+def variant_paths(variant):
+    require(variant in VARIANTS, "unsupported kernel variant")
+    prefix = "aurora/" + variant
+    files = {prefix + ".bin", *(prefix + "/" + name for name in
+             ("Image.gz", "t6050-j716s.dtb", "initramfs.cpio.gz"))}
+    if variant == "bringup":
+        files.update({prefix + "/.config", prefix + "/baseline.config"})
+    return prefix, files
+
+
+def kernel_config(text):
+    values = {}
+    for line in text.splitlines():
+        disabled = re.fullmatch(r"# (CONFIG_\w+) is not set", line)
+        enabled = re.fullmatch(r"(CONFIG_\w+)=(.+)", line)
+        if not (disabled or enabled):
+            require(not line.startswith("CONFIG_"), "malformed kernel config")
+            continue
+        key = (disabled or enabled)[1]
+        require(key not in values, "duplicate kernel config: " + key)
+        values[key] = "n" if disabled else enabled[2]
+    return values
+
+
+def validate_bluetooth_config(baseline_text, candidate_text):
+    baseline, candidate = kernel_config(baseline_text), kernel_config(candidate_text)
+    require(baseline and candidate, "empty kernel config")
+    changed = {key for key in baseline.keys() | candidate.keys()
+               if baseline.get(key, "n") != candidate.get(key, "n")}
+    require(changed <= CONFIG_DELTA, "bringup changed unrelated kernel config: " + ", ".join(sorted(changed - CONFIG_DELTA)))
+    require(all(candidate.get(key) == "y" for key in BLUETOOTH_CONFIG), "Bluetooth capabilities must be built in")
 
 
 def require(condition, message):
@@ -84,15 +138,17 @@ def verify_file(root, entry):
             "candidate file differs: " + entry["path"])
 
 
-def verify_candidate(root, baseline_release, identity, deployment):
+def verify_candidate(root, baseline_release, identity, deployment, variant="open-wifi"):
     """Validate stored trial data without requiring a currently running trial.
 
     Return the parsed receipt. root is the mounted root; identity and deployment
     are its parsed baseline JSON objects. Validation never mutates state.
     """
     require(baseline_release == BASELINE_RELEASE, "unsupported candidate baseline kernel")
+    prefix, boot_files = variant_paths(variant)
+    pins = VARIANTS[variant]
     root = Path(root).resolve()
-    receipt_path = safe_path(root, "etc/j716s/open-wifi.json")
+    receipt_path = safe_path(root, "etc/j716s/" + variant + ".json")
     metadata = receipt_path.stat()
     require(metadata.st_uid == 0 and metadata.st_mode & 0o022 == 0,
             "candidate receipt must be root-owned and not group/world writable")
@@ -101,9 +157,9 @@ def verify_candidate(root, baseline_release, identity, deployment):
         "schema", "kind", "trial_id", "baseline_identity_sha256", "baseline_deployment_sha256",
         "kernel_release", "build_manifest", "files", "modules"}, "unsupported candidate receipt fields")
     require(type(receipt["schema"]) is int and receipt["schema"] == 1
-            and receipt["kind"] == "j716s-open-wifi-trial", "unsupported candidate receipt")
+            and receipt["kind"] == "j716s-" + variant + "-trial", "unsupported candidate receipt")
     require(sha256(receipt["trial_id"]), "invalid candidate trial ID")
-    require(receipt["kernel_release"] == CANDIDATE_RELEASE, "candidate receipt kernel differs")
+    require(receipt["kernel_release"] == pins["release"], "candidate receipt kernel differs")
     for relative, key, expected in (
             ("usr/share/j716s/image-identity.json", "baseline_identity_sha256", identity),
             ("boot/aurora/deployment.json", "baseline_deployment_sha256", deployment)):
@@ -118,10 +174,10 @@ def verify_candidate(root, baseline_release, identity, deployment):
         "candidate must embed the full build manifest")
     require(type(build["schema"]) is int and build["schema"] == 1
             and build["commit"] == KERNEL_COMMIT
-            and build["kernel_release"] == CANDIDATE_RELEASE
-            and build["variant"] == "open-wifi"
+            and build["kernel_release"] == pins["release"]
+            and build["variant"] == variant
             and build["qualification"] == "unqualified-experimental"
-            and build["patches"] == {"kernel-j716s-open-wifi.patch": PATCH_SHA256},
+            and build["patches"] == pins["patches"],
             "candidate build pins, variant, qualification or patch differ")
     artifacts = build["artifacts"]
     require(isinstance(artifacts, dict) and set(artifacts) == BUILD_ARTIFACTS,
@@ -130,28 +186,42 @@ def verify_candidate(root, baseline_release, identity, deployment):
         require(isinstance(artifact, dict) and set(artifact) == {"bytes", "sha256"}
                 and type(artifact["bytes"]) is int and artifact["bytes"] >= 0
                 and sha256(artifact["sha256"]), "invalid candidate build artifact")
-    for name in (".config", "t6050-j716s.dtb"):
+    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), "sep-probe": (".config",)}
+    for name in baseline_artifacts.get(variant, (".config", "t6050-j716s.dtb")):
         baseline = identity["kernel_artifacts"][name]
         require(artifacts[name]["sha256"] == baseline["sha256"]
                 and artifacts[name]["bytes"] == baseline["size_bytes"],
                 "candidate changed baseline build artifact: " + name)
     files = inventory(receipt["files"])
-    require(set(files) == BOOT_FILES, "candidate boot inventory differs")
-    image = files["aurora/open-wifi/Image.gz"]
+    require(set(files) == boot_files, "candidate boot inventory differs")
+    image = files[prefix + "/Image.gz"]
     require(image["sha256"] == artifacts["Image.gz"]["sha256"]
             and image["size"] == artifacts["Image.gz"]["bytes"], "candidate kernel build binding differs")
     dependencies = deployment["payload_files"]
     for name in ("t6050-j716s.dtb", "initramfs.cpio.gz"):
         baseline = [entry for entry in dependencies if entry["path"] == "aurora/root/" + name]
         require(len(baseline) == 1, "baseline candidate dependency is missing or duplicated")
-        entry = files["aurora/open-wifi/" + name]
+        entry = files[prefix + "/" + name]
+        if variant == "sep-probe" and name == "t6050-j716s.dtb":
+            require(entry["sha256"] == artifacts[name]["sha256"]
+                    and entry["size"] == artifacts[name]["bytes"],
+                    "candidate DTB build binding differs")
+            continue
         require(entry["sha256"] == baseline[0]["sha256"] and entry["size"] == baseline[0]["size"],
                 "candidate changed baseline boot dependency: " + name)
     for entry in files.values():
         verify_file(root / "boot", entry)
     modules = inventory(receipt["modules"])
+    if variant == "bringup":
+        for name, expected in ((".config", artifacts[".config"]),
+                               ("baseline.config", {"bytes": identity["kernel_artifacts"][".config"]["size_bytes"],
+                                                    "sha256": identity["kernel_artifacts"][".config"]["sha256"]})):
+            entry = files[prefix + "/" + name]
+            require(entry["size"] == expected["bytes"] and entry["sha256"] == expected["sha256"], "config build binding differs")
+        validate_bluetooth_config(safe_path(root / "boot", prefix + "/baseline.config").read_text(),
+                                  safe_path(root / "boot", prefix + "/.config").read_text())
     require(modules, "candidate module inventory is empty")
-    module_root = safe_path(root, "usr/lib/modules/" + CANDIDATE_RELEASE, directory=True)
+    module_root = safe_path(root, "usr/lib/modules/" + pins["release"], directory=True)
 
     def walk_error(error):
         raise error
@@ -172,7 +242,10 @@ def verify_candidate(root, baseline_release, identity, deployment):
 
 
 def _validate_persistent_selection(root, deployment, receipt, selected_sha256=None):
-    path = safe_path(root, "etc/j716s/open-wifi-default.json")
+    variant = receipt["build_manifest"]["variant"]
+    require(variant != "sep-probe", "SEP probe has no persistent authorization")
+    prefix, _ = variant_paths(variant)
+    path = safe_path(root, "etc/j716s/" + variant + "-default.json")
     metadata = path.stat()
     require(metadata.st_uid == 0 and metadata.st_mode & 0o022 == 0,
             "persistent receipt must be root-owned and not group/world writable")
@@ -182,13 +255,13 @@ def _validate_persistent_selection(root, deployment, receipt, selected_sha256=No
         "baseline_payload_sha256", "selected_payload_sha256"},
         "unsupported persistent receipt fields")
     require(type(persistent["schema"]) is int and persistent["schema"] == 1
-            and persistent["kind"] == "j716s-open-wifi-default"
-            and persistent["kernel_release"] == CANDIDATE_RELEASE,
+            and persistent["kind"] == "j716s-" + variant + "-default"
+            and persistent["kernel_release"] == VARIANTS[variant]["release"],
             "unsupported persistent receipt")
     candidate_payload = next(entry["sha256"] for entry in receipt["files"]
-                             if entry["path"] == "aurora/open-wifi.bin")
+                             if entry["path"] == prefix + ".bin")
     for key, expected in (
-            ("candidate_receipt_sha256", digest(safe_path(root, "etc/j716s/open-wifi.json"))),
+            ("candidate_receipt_sha256", digest(safe_path(root, "etc/j716s/" + variant + ".json"))),
             ("baseline_payload_sha256", deployment["root_payload_sha256"]),
             ("selected_payload_sha256", candidate_payload)):
         require(sha256(persistent[key]) and persistent[key] == expected,
@@ -202,16 +275,26 @@ def _validate_persistent_selection(root, deployment, receipt, selected_sha256=No
 def validate_boot_selection(root, baseline_release, identity, deployment):
     """Authorize the selected baseline payload or the explicitly bound candidate."""
     root = Path(root).resolve()
+    require(not (root / "etc/j716s/sep-probe-default.json").exists(),
+            "SEP probe has no persistent authorization")
     selected_sha256 = digest(safe_path(root, "boot/aurora/boot.bin"))
     if selected_sha256 == deployment["root_payload_sha256"]:
         return
-    receipt = verify_candidate(root, baseline_release, identity, deployment)
+    matches = []
+    for variant in VARIANTS:
+        path = root / ("etc/j716s/" + variant + "-default.json")
+        if path.exists():
+            persistent = json.loads(safe_path(root, str(path.relative_to(root))).read_text())
+            if persistent.get("selected_payload_sha256") == selected_sha256:
+                matches.append(variant)
+    require(len(matches) == 1, "selected payload has no unique pinned authorization")
+    receipt = verify_candidate(root, baseline_release, identity, deployment, matches[0])
     _validate_persistent_selection(root, deployment, receipt, selected_sha256)
 
 
 def validate_running_kernel(root, baseline_release, identity, deployment, cmdline,
                             running_release=None):
-    """Return None only for the baseline or a fully bound open-WiFi boot.
+    """Return None only for the baseline or a fully bound pinned variant.
 
     cmdline is the guard's key/value mapping. All failures raise RuntimeError,
     ValueError, KeyError or OSError; no state is mutated.
@@ -219,17 +302,26 @@ def validate_running_kernel(root, baseline_release, identity, deployment, cmdlin
     running_release = os.uname().release if running_release is None else running_release
     if running_release == baseline_release and TOKEN not in cmdline:
         return
-    require(running_release == CANDIDATE_RELEASE,
-            "running kernel is neither the baseline nor the exact open-WiFi candidate")
+    matches = [variant for variant, pins in VARIANTS.items() if pins["release"] == running_release]
+    require(len(matches) == 1, "running kernel is neither baseline nor an exact pinned candidate")
+    variant = matches[0]
+    if variant == "sep-probe":
+        require(all(cmdline.get(key) == value for key, value in SEP_PROBE_PARAMETERS.items()),
+                "SEP probe requires safe discovery command-line flags")
+    prefix, _ = variant_paths(variant)
     require(TOKEN in cmdline and sha256(cmdline[TOKEN]), "candidate command-line trial ID is missing")
-    receipt = verify_candidate(root, baseline_release, identity, deployment)
+    receipt = verify_candidate(root, baseline_release, identity, deployment, variant)
     require(receipt["trial_id"] == cmdline[TOKEN], "candidate receipt trial ID differs")
     root = Path(root).resolve()
+    if variant == "sep-probe":
+        require(not (root / "etc/j716s/sep-probe-default.json").exists(),
+                "SEP probe has no persistent authorization")
     trial = root / "sys/firmware/devicetree/base/chosen/aurora,trial"
     if not trial.exists():
         trial = root / "proc/device-tree/chosen/aurora,trial"
     if trial.exists():
-        require(trial.read_bytes().strip(b"\0") == b"aurora/open-wifi.bin",
-                "candidate is not the one-shot open-WiFi trial")
+        require(trial.read_bytes().strip(b"\0") == (prefix + ".bin").encode(),
+                "candidate does not match its one-shot trial")
     else:
+        require(variant != "sep-probe", "SEP probe requires a matching one-shot trial")
         _validate_persistent_selection(root, deployment, receipt)

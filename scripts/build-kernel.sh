@@ -2,10 +2,10 @@
 # Host launcher: creates a disposable build guest, never touches target hardware.
 set -euo pipefail
 mode=baseline
-if (( $# == 1 )) && [[ $1 == --open-wifi ]]; then
-  mode=open-wifi
+if (( $# == 1 )) && [[ $1 == --open-wifi || $1 == --bringup ]]; then
+  mode=${1#--}
 elif (( $# != 0 )); then
-  echo "Usage: $0 [--open-wifi]" >&2
+  echo "Usage: $0 [--open-wifi|--bringup]" >&2
   exit 2
 fi
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)

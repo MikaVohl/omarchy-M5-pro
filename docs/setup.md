@@ -88,6 +88,104 @@ hashes. The driver is built in, so each new candidate needs a controlled boot;
 firmware failure may require full shutdown/power-on rather than a warm reboot.
 No reinstall, repartitioning, or factory reset is part of this test.
 
+### Bluetooth and GPU-diagnostics bringup candidate
+
+```sh
+CONTAINER_RUNTIME=docker BUILD_RESOURCE_LIMITS=0 bash scripts/build-kernel.sh --bringup
+sudo python3 -B scripts/deploy-bringup.py
+# Only with explicit authorization to select an unbooted experimental kernel:
+sudo python3 -B scripts/deploy-bringup.py --activate --acknowledge-unbooted-risk
+```
+
+This variant retains the open-WiFi patch, adds built-in RFCOMM, LE, BNEP and
+uinput, and adds bounded halted-state G17 diagnostics when firmware names no
+blamed queue. It does not fix or suppress the observed scheduling pause timeout.
+Exports are isolated under `outputs/kernel-bringup-candidate/`, release
+`7.3.0-j716s-8ab10100a4c1-bringup`. The runtime validator pins every patch,
+checks the Bluetooth-only config delta against the installed image's config,
+and keeps the baseline DTB/initramfs unchanged. The default baseline config
+input is the hash-matched `outputs/kernel-open-wifi-candidate/.config`; supply
+`--baseline-config` for another copy with those exact bytes.
+
+Activation publishes last, preserves the previous authorized default and runtime
+bytes privately, and restores that default on publication/readback failure.
+It never changes the running kernel, arms a trial, deletes retained kernels,
+repartitions, replaces rescue or reboots. Explicit unbooted activation is a
+documented risk exception, not boot/Bluetooth/recovery qualification.
+Use [rollback](recovery.md#bringup-candidate-rollback) if needed.
+
+### Open AVD firmware and Moonlight
+
+The installed generic `avd-fw` package lacks the Aurora queue-ABI-2 tier2 image.
+Do not rename its tier1 image. Acquire the pinned open-source archive, then build
+offline in the disposable guest:
+
+```sh
+mkdir -p work/cache
+curl --fail --location --output work/cache/avd-fw-ea3a65cc9c0c41907e6ad2714b813e4be6858485.tar.gz \
+  https://codeload.github.com/aurora-silicon/avd-fw/tar.gz/ea3a65cc9c0c41907e6ad2714b813e4be6858485
+CONTAINER_RUNTIME=docker bash scripts/build-avd-firmware.sh
+sudo python3 -B scripts/install-avd-firmware.py
+sudo python3 -B scripts/install-avd-firmware.py --install
+```
+
+The builder verifies source SHA-256 and pinned AVD driver inputs, builds v5/tier2
+twice, checks exact CM3 vectors against ELF `_start`, runs the upstream host queue
+test and publishes only identical images. Installation validates the live boot
+binding and package, refuses existing firmware/receipts and does not load AVD.
+The next probe can boot unqualified hardware; an attended load/decode campaign
+requires physical recovery access because a hardware wedge may need a power cycle.
+`sudo python3 -B scripts/install-avd-firmware.py --rollback` removes only the
+exact firmware this tool installed, without unloading a running decoder.
+
+For a complete IPSW firmware package, add
+`--avd-firmware-dir outputs/firmware/j716s-26C5035r-avd` to
+`scripts/prepare-firmware.py`. The root-image builder carries the supplied image.
+The repo's Moonlight desktop policy selects the separately installed
+`v4l2_request` VA-API backend for that app only. Direct CLI equivalent:
+
+```sh
+LIBVA_DRIVER_NAME=v4l2_request LIBVA_DRIVERS_PATH=/usr/lib/dri moonlight
+```
+
+H.264 hardware frame checksums and Moonlight's startup probe worked on the
+observed payload. No streaming host was exercised, and HEVC/AV1/VP9 correctness,
+high-resolution throughput, decoder recovery and long-session stability remain
+unqualified. AVE/ANE/ProRes/camera firmware guards are not bypassed.
+
+### Read-only port, power and recovery evidence
+
+```sh
+python3 -B scripts/qualify-usb-power.py --plan
+python3 -B scripts/qualify-usb-power.py --case suspend-readiness --output /private/new-before.json
+# After attended attachment of a known device, use the same unit/boot snapshot:
+python3 -B scripts/qualify-usb-power.py --case usb3 --port right --orientation 1 \
+  --equipment 'known SuperSpeed device and cable' --before /private/new-before.json \
+  --output /private/new-after.json
+python3 -B scripts/capture-gpu-recovery.py --since '2026-11-14T15:27:30-06:00' \
+  --until '2026-11-14T15:30:00-06:00' --output /private/new-gpu-incident
+```
+
+These tools never force roles, authorize devices, change charging thresholds,
+modify power/clock policy, start GPU workloads, mount debugfs or suspend. Missing
+sources/errors are retained; GPU capture may exit nonzero while preserving its
+private evidence. Snapshots cannot award a physical qualification pass.
+
+For ALS, capture factory `CalibrationData` on this same unit in its exact paired
+macOS build, then validate/stage it on Linux:
+
+```sh
+# Paired macOS, read-only IORegistry capture:
+python3 scripts/prepare-als-calibration.py capture /private/new-als-capture
+# Transfer that private directory to this same physical J716s, then:
+python3 scripts/prepare-als-calibration.py check /private/new-als-capture
+python3 scripts/prepare-als-calibration.py prepare /private/new-als-capture \
+  --output outputs/firmware/j716s-als
+```
+
+The serial-hash gate prevents another unit's calibration being staged. Factory
+plists/calibration remain private. This does not install or qualify the sensor.
+
 
 ## 4. Prepare your matching firmware
 
@@ -271,6 +369,45 @@ findmnt -nro SOURCE,FSTYPE / /boot
 Require native chip `0x6050`/generation 17 and DCP scanout, full-notch 3456×2234 at 120 Hz, no compositor configuration errors, authenticated input/desktop, and verified filesystem/ESP identities. Use preferred monitor discovery; do not freeze a DRM card or transplant probe settings into the owner's configuration. Do not run the binding service script manually as a read-only test: it owns verified remount/growth.
 
 Qualify networking and a controlled restart/return to macOS separately. Audio, suspend, external displays, camera, Touch ID, and daily-use stability remain outside the observed qualification. Keep speaker safety disabled.
+
+## Discovery-only SEP candidate
+
+This is preparation for an attended J716s SEP experiment, not Touch ID setup.
+It requires the pinned source archive and the previously verified baseline
+`.config` in `outputs/kernel-open-wifi-candidate/`. The builder snapshots the
+installed `/boot/aurora/root/t6050-j716s.dtb` to retain its exact KIS states.
+Run on the installed native ARM64 J716s, with Docker and passwordless sudo:
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build
+sudo python3 -B scripts/stage-sep-probe.py --stage --acknowledge-risk
+```
+
+The builder creates `outputs/kernel-sep-probe-candidate/` and release
+`7.3.0-j716s-8ab10100a4c1-sep-probe` in an isolated Fedora guest. It refuses
+existing outputs, verifies pinned inputs, preserves the baseline configuration
+and all six KIS node states, and records build/patch/artifact provenance.
+The distinct J716s profile uses the measured `0x1c000` registration capacity;
+the sibling J714s profile is unchanged.
+
+Staging validates the running baseline, authorized open-WiFi or bringup installation,
+installs separate modules and `aurora/sep-probe` ESP dependencies, records
+`/etc/j716s/sep-probe.json`, and updates the receipt validator with rollback
+protection. The default payload, rescue, existing boot dependencies, guard and
+spent one-shot marker remain unchanged. The staging CLI has no arming or reboot
+operation, and the validator refuses persistent SEP-probe selection.
+
+The candidate carries `apple_sep.xart_writes=0`, `provision_keybag=0`,
+`xart_guard=2`, `trusted_keys=0`, `filevault_api=0`, and `keystore_only=1`.
+Its module rejects unsafe parameters before DT/DMA/mailbox changes and refuses
+`complete_attach`. SPI2 and the sensor remain disabled. No fingerprint service,
+PAM change, factory-data installation, enrollment, or verification is included.
+
+Schedule the separate attended cold-boot experiment only after reviewing
+[the measured limits](hardware-status.md#touch-id-investigation--2026-11-14)
+and [recovery](recovery.md). A one-shot registration can leave SEP unresponsive
+until a physical power cycle. Do not open `/dev/sep-bio`, reset enclave state,
+enable writes, or treat a successful build/stage as hardware qualification.
 
 ## Source maintenance and checks
 

@@ -53,6 +53,24 @@ No Apple firmware bytes or extracted metadata blobs are published. Host tests
 establish join-builder behavior only, not working hardware support.
 
 
+### Open AVD firmware
+
+`scripts/prepare-avd-firmware.py` consumes
+[Aurora avd-fw ea3a65cc9c0c41907e6ad2714b813e4be6858485](https://github.com/aurora-silicon/avd-fw/commit/ea3a65cc9c0c41907e6ad2714b813e4be6858485),
+archive SHA-256 `e266022f0bedf531431be50efcbe23f29a10efc4b0a64468abcc6c3f7e364b19`.
+This MIT-licensed open CM3 firmware is not an Apple executable image. Its queue
+ABI 2 and v5/tier2 SRAM aperture match the pinned AVD driver inputs, whose source
+hashes are checked before building. The builder records tool versions, ELF hash,
+vector checks, upstream host queue tests and two byte-identical clean images.
+Observed LLVM 21.1.8 output was 73,728 bytes; independent toolchains may differ.
+Generated firmware/provenance stay in ignored local outputs.
+
+Bluetooth and G17 diagnostic patches are source-hash pinned in the bringup
+build and runtime validator. The latter is instrumentation only, not a proven
+GPU recovery fix. ALS preparation preserves per-unit Apple factory bytes and
+checks model/build/serial identity; those bytes and their raw plist evidence
+must not be published or substituted between units.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

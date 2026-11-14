@@ -155,20 +155,36 @@ def patched_guard(directory):
     return target.read_bytes()
 
 
-def build_candidate(directory, identity, deployment):
-    kernel = PROJECT / "outputs/kernel-open-wifi-candidate"
+def build_candidate(directory, identity, deployment, variant="open-wifi", baseline_config=None):
+    boot_prefix, _ = candidate_boot.variant_paths(variant)
+    pins = candidate_boot.VARIANTS[variant]
+    release = pins["release"]
+    kernel = PROJECT / ("outputs/kernel-" + variant + "-candidate")
     build = json.loads((kernel / "build-manifest.json").read_text())
-    require(build["kernel_release"] == RELEASE and build["variant"] == "open-wifi"
-            and build["qualification"] == "unqualified-experimental", "not the experimental build")
-    require(build["patches"] == {"kernel-j716s-open-wifi.patch": digest(PROJECT / "patches/kernel-j716s-open-wifi.patch")}, "driver patch differs")
+    require(build["schema"] == 1 and build["commit"] == candidate_boot.KERNEL_COMMIT
+            and build["kernel_release"] == release and build["variant"] == variant
+            and build["qualification"] == "unqualified-experimental", "not the pinned experimental build")
+    require(build["patches"] == pins["patches"] == {name: digest(PROJECT / "patches" / name)
+            for name in pins["patches"]}, "driver/config patch differs")
+    require(set(build["artifacts"]) == candidate_boot.BUILD_ARTIFACTS, "kernel artifact inventory differs")
     for name, item in build["artifacts"].items():
         require(name in {"Image", "Image.gz", "t6050-j716s.dtb", ".config", "System.map", "Module.symvers", "kernel.release", "modules.tar.gz"}, "unexpected kernel artifact")
         check_regular(kernel / name)
         require(record(kernel / name) == {"size": item["bytes"], "sha256": item["sha256"]}, "candidate artifact differs: " + name)
-    for name in (".config", "t6050-j716s.dtb"):
-        require(build["artifacts"][name]["sha256"] == identity["kernel_artifacts"][name]["sha256"], "candidate changes more than the reviewed driver: " + name)
+    baseline_artifacts = ((".config",) if variant == "sep-probe" else
+                          ("t6050-j716s.dtb",) if variant == "bringup" else
+                          (".config", "t6050-j716s.dtb"))
+    for name in baseline_artifacts:
+        require(build["artifacts"][name]["sha256"] == identity["kernel_artifacts"][name]["sha256"], "candidate changed baseline artifact: " + name)
+    if variant == "bringup":
+        require(baseline_config is not None, "bringup requires the hash-bound baseline config")
+        baseline_config = Path(baseline_config).resolve()
+        check_regular(baseline_config)
+        expected = identity["kernel_artifacts"][".config"]
+        require(record(baseline_config) == {"size": expected["size_bytes"], "sha256": expected["sha256"]}, "baseline config differs")
+        candidate_boot.validate_bluetooth_config(baseline_config.read_text(), (kernel / ".config").read_text())
     modules_root = Path(directory) / "modules"
-    prefix = PurePosixPath("lib/modules") / RELEASE
+    prefix = PurePosixPath("lib/modules") / release
     with tarfile.open(kernel / "modules.tar.gz", "r:gz") as archive:
         for member in archive:
             path = PurePosixPath(member.name)
@@ -192,7 +208,14 @@ def build_candidate(directory, identity, deployment):
     require(sum(line.startswith("chosen.bootargs=") for line in lines) == 1, "ambiguous baseline boot arguments")
     require(not any("j716s.candidate=" in line for line in lines), "baseline is already a candidate")
     trial_id = secrets.token_hex(32)
-    lines = [line + " j716s.candidate=" + trial_id if line.startswith("chosen.bootargs=") else line for line in lines]
+    extra = " j716s.candidate=" + trial_id
+    if variant == "sep-probe":
+        for line in lines:
+            if line.startswith("chosen.bootargs="):
+                existing = {token.partition("=")[0] for token in line.split("=", 1)[1].split()}
+                require(not existing.intersection(candidate_boot.SEP_PROBE_PARAMETERS), "baseline already supplies SEP parameters")
+        extra += " " + " ".join(key + "=" + value for key, value in candidate_boot.SEP_PROBE_PARAMETERS.items())
+    lines = [line + extra if line.startswith("chosen.bootargs=") else line for line in lines]
     encoded = ("\n".join(lines) + "\n").encode("ascii")
     spec = importlib.util.spec_from_file_location("trial_payload", PROJECT / "work/aura-audit/compose-linux-rescue.py")
     helpers = importlib.util.module_from_spec(spec)
@@ -201,16 +224,23 @@ def build_candidate(directory, identity, deployment):
     require(image[0x38:0x3c] == b"ARM\x64", "candidate is not an ARM64 Image")
     text_offset, image_size = struct.unpack_from("<QQ", image, 8)
     require(len(image) <= image_size and 0 < text_offset + image_size <= 128 * 1024**2, "candidate exceeds the enrolled kernel window")
-    files = [("aurora/open-wifi/Image.gz", (kernel / "Image.gz").read_bytes()),
-             ("aurora/open-wifi/t6050-j716s.dtb", (ESP / "aurora/root/t6050-j716s.dtb").read_bytes()),
-             ("aurora/open-wifi/initramfs.cpio.gz", (ESP / "aurora/root/initramfs.cpio.gz").read_bytes())]
+    dtb = kernel / "t6050-j716s.dtb" if variant == "sep-probe" else ESP / "aurora/root/t6050-j716s.dtb"
+    files = [(boot_prefix + "/Image.gz", (kernel / "Image.gz").read_bytes()),
+             (boot_prefix + "/t6050-j716s.dtb", dtb.read_bytes()),
+             (boot_prefix + "/initramfs.cpio.gz", (ESP / "aurora/root/initramfs.cpio.gz").read_bytes())]
     payload, _, inventory = helpers.boot_payload(bare, deployment["esp_partition_uuid"], files, encoded)
-    inventory.append({"path": TRIAL, "size": len(payload), "sha256": sha(payload)})
-    receipt = {"schema": 1, "kind": "j716s-open-wifi-trial", "trial_id": trial_id,
-               "kernel_release": RELEASE, "baseline_identity_sha256": digest("/usr/share/j716s/image-identity.json"),
+    if variant == "bringup":
+        for name, source in ((".config", kernel / ".config"), ("baseline.config", baseline_config)):
+            data = source.read_bytes()
+            files.append((boot_prefix + "/" + name, data))
+            inventory.append({"path": boot_prefix + "/" + name, "size": len(data), "sha256": sha(data)})
+    trial = boot_prefix + ".bin"
+    inventory.append({"path": trial, "size": len(payload), "sha256": sha(payload)})
+    receipt = {"schema": 1, "kind": "j716s-" + variant + "-trial", "trial_id": trial_id,
+               "kernel_release": release, "baseline_identity_sha256": digest("/usr/share/j716s/image-identity.json"),
                "baseline_deployment_sha256": digest(ESP / "aurora/deployment.json"),
                "build_manifest": build, "files": inventory, "modules": modules}
-    return files + [(TRIAL, payload)], receipt, module_dir
+    return files + [(trial, payload)], receipt, module_dir
 
 
 def stage(apply):

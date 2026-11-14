@@ -23,9 +23,12 @@ __pycache__/
 work/sources/
 work/cache/
 work/build/
+work/touchid-probe-source/
 work/kernel-build/candidate/
 outputs/kernel-candidate/
 outputs/kernel-open-wifi-candidate/
+outputs/kernel-bringup-candidate/
+outputs/kernel-sep-probe-candidate/
 outputs/rootfs/
 outputs/firmware/
 outputs/boot-candidate/loader/
