@@ -6,6 +6,9 @@
 - Add an isolated J716s SEP profile with measured `0x1c000` registration capacity, mandatory non-writing parameters, and a refused transition to sensor/persistent operation; leave J714s and baseline reproduction unchanged.
 - Add a pinned build recipe and non-arming staging tool, preserving baseline configuration, qualified KIS topology, current default and rescue. Bind changed DTB/modules to the build receipt and forbid persistent selection of this probe.
 - Add isolated authorization regressions. SEP attachment, enrollment and matching remain unqualified; the attended reboot is a separately authorized experiment.
+- Add explicitly attended one-shot SEP arming/cancellation, private backup attestation/waiver, direct-disk marker readback and failure restoration; keep persistent selection forbidden.
+- Preserve baseline/bringup rollback after a reviewed SEP marker is spent; reject armed and unreviewed trial markers.
+- Add isolated marker durability, interruption, concurrent-change and missing-module cancellation regressions.
 
 ## Bringup audit improvements — 2026-11-14
 

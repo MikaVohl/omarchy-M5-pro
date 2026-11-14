@@ -394,8 +394,9 @@ Staging validates the running baseline, authorized open-WiFi or bringup installa
 installs separate modules and `aurora/sep-probe` ESP dependencies, records
 `/etc/j716s/sep-probe.json`, and updates the receipt validator with rollback
 protection. The default payload, rescue, existing boot dependencies, guard and
-spent one-shot marker remain unchanged. The staging CLI has no arming or reboot
-operation, and the validator refuses persistent SEP-probe selection.
+spent one-shot marker remain unchanged by staging. Arming and cancellation are
+separate explicit operations; no command reboots, and persistent SEP selection
+is forbidden.
 
 The candidate carries `apple_sep.xart_writes=0`, `provision_keybag=0`,
 `xart_guard=2`, `trusted_keys=0`, `filevault_api=0`, and `keystore_only=1`.
@@ -408,6 +409,48 @@ Schedule the separate attended cold-boot experiment only after reviewing
 and [recovery](recovery.md). A one-shot registration can leave SEP unresponsive
 until a physical power cycle. Do not open `/dev/sep-bio`, reset enclave state,
 enable writes, or treat a successful build/stage as hardware qualification.
+
+### Select the attended discovery trial once
+
+Prefer a current verified backup and retained bootable macOS. Dual boot is a
+recovery route, not an independent backup: both OSes share the SSD and SEP.
+After saving work and confirming physical Startup Options/power-cycle access:
+
+```sh
+sudo python3 -B scripts/stage-sep-probe.py --arm --acknowledge-risk \
+  --attended-cold-boot --backup-verified
+```
+
+An owner who explicitly accepts proceeding without that backup must instead use
+`--waive-backup`; the private arming receipt records `waived-by-owner`, not a
+verified-backup claim. This exception does not authorize sensor access,
+enrollment, FileVault/keybag operations or enclave-storage writes.
+
+Arming verifies the candidate and exact DT delta, preserves every default/root/
+rescue dependency, and writes only the existing `aura-try` marker in place plus
+`/etc/j716s/sep-probe-arming.json`. Direct-disk readback or validation failure
+restores the old marker. The current kernel and persistent default are unchanged.
+
+Before shutdown, cancel if needed:
+
+```sh
+sudo python3 -B scripts/stage-sep-probe.py --cancel
+```
+
+Cancel can disarm this exact trial even if candidate modules are damaged; it
+never replaces the default. Do not overwrite another candidate's armed marker.
+An existing arming receipt requires inspection before another experiment.
+
+Shut down fully, then start Linux. Expect
+`7.3.0-j716s-8ab10100a4c1-sep-probe` and successful boot binding. The marker is
+spent before trial loading, so the following ordinary Linux start should return
+to bringup; fallback after a failed trial is not physically qualified.
+
+Only after verifying that trial boot, explicitly load SEP once with all six
+non-writing discovery parameters. Do not unload/reload to retry registration,
+open `/dev/sep-bio`, write `complete_attach`, enroll, or reset enclave state.
+Capture the first registration result and arrange a cold power cycle/macOS
+check afterward. See [recovery](recovery.md#attended-sep-trial-recovery).
 
 ## Source maintenance and checks
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Stage a discovery-only J716s SEP trial without arming or changing boot selection."""
+"""Stage/check or explicitly arm/cancel a discovery-only J716s SEP trial; never reboot."""
 import argparse
+from datetime import datetime, timezone
 import importlib.util
 import json
 import os
@@ -29,6 +30,9 @@ GUARD = Path("/usr/local/lib/j716s/j716s-bind-boot.py")
 HELPER = GUARD.parent / "candidate_boot.py"
 ESP = Path("/boot")
 WORK = PROJECT / "work/build/sep-probe-stage"
+ARMING_RECORD = Path("/etc/j716s/sep-probe-arming.json")
+ARMED_MARKER = ("armed\n" + PREFIX + ".bin\n").encode("ascii")
+SPENT_MARKER = ("spent\n" + PREFIX + ".bin\n").encode("ascii")
 
 
 def require(condition, message):
@@ -47,7 +51,7 @@ def protected_snapshot():
     return {path: trial.record(path) for path in paths}
 
 
-def preflight():
+def preflight(allow_armed=False):
     require(os.geteuid() == 0, "run through sudo")
     require(os.uname().machine == "aarch64", "this is not ARM64")
     require(b"apple,j716s" in Path("/proc/device-tree/compatible").read_bytes().split(b"\0"), "wrong board")
@@ -59,7 +63,8 @@ def preflight():
     subprocess.run([sys.executable, str(GUARD), "--check-only"], check=True)
     device = subprocess.check_output(["findmnt", "-nro", "SOURCE", "--target", str(ESP)], text=True).strip()
     marker = trial.marker_location(device)
-    require(marker.startswith(b"spent\n"), "another trial is armed; leaving it untouched")
+    require(marker.startswith(b"spent\n") or (allow_armed and marker == ARMED_MARKER),
+            "another trial is armed; leaving it untouched")
     identity = json.loads(Path("/usr/share/j716s/image-identity.json").read_text())
     deployment = json.loads((ESP / "aurora/deployment.json").read_text())
     require(identity["kernel_release"] == deployment["kernel_release"] == candidate_boot.BASELINE_RELEASE,
@@ -100,6 +105,79 @@ def check_staged():
     require(trial.digest(HELPER) == trial.digest(SUPPORT / "candidate_boot.py"), "installed trial validator differs")
     print("STAGED AND UNARMED: " + receipt["kernel_release"])
     print("No reboot, enrollment, enclave-storage write, or default boot change performed.")
+
+
+def write_marker_checked(marker, expected, data, readback, sync, after_write=None):
+    """Keep the FAT allocation in place; disk/validation failure restores old bytes."""
+    trial.check_regular(marker)
+    require(8 <= len(expected) <= 512 and 8 <= len(data) <= 512, "invalid marker size")
+    require(marker.read_bytes() == expected, "trial marker changed before update")
+
+    def write(value):
+        with marker.open("r+b") as stream:
+            stream.write(value)
+            stream.truncate()
+            stream.flush()
+            os.fsync(stream.fileno())
+        sync()
+
+    try:
+        write(data)
+        require(readback() == data, "trial marker direct-disk readback differs")
+        if after_write is not None:
+            after_write()
+    except BaseException:
+        write(expected)
+        require(readback() == expected, "original marker restoration readback differs")
+        raise
+
+
+def arm(backup_status):
+    identity, deployment, device = preflight()
+    receipt = candidate_boot.verify_candidate(Path("/"), candidate_boot.BASELINE_RELEASE,
+                                              identity, deployment, VARIANT)
+    validate_dtb_delta((ESP / (PREFIX + "/t6050-j716s.dtb")).read_bytes())
+    require(trial.digest(HELPER) == trial.digest(SUPPORT / "candidate_boot.py"), "installed validator differs")
+    require(not ARMING_RECORD.exists() and not ARMING_RECORD.is_symlink(),
+            "earlier SEP arming record exists; inspect it before another experiment")
+    snapshot = protected_snapshot()
+    marker = ESP / "aura-try"
+    old = trial.marker_location(device)
+    record = {"schema": 1, "kind": "j716s-sep-discovery-arming",
+              "trial_id": receipt["trial_id"], "kernel_release": receipt["kernel_release"],
+              "candidate_receipt_sha256": trial.digest(RECEIPT),
+              "baseline_deployment_sha256": trial.digest(ESP / "aurora/deployment.json"),
+              "preserved_default_sha256": trial.digest(ESP / "aurora/boot.bin"),
+              "recorded_at": datetime.now(timezone.utc).isoformat(),
+              "backup_status": backup_status, "attended_cold_boot": True,
+              "previous_marker": old.decode("ascii"), "requested_marker": ARMED_MARKER.decode("ascii"),
+              "enrollment_authorized": False, "enclave_writes_authorized": False}
+    trial.atomic(ARMING_RECORD, (json.dumps(record, indent=2) + "\n").encode())
+
+    def unchanged_selection():
+        for path, expected in snapshot.items():
+            if path != marker:
+                require(trial.record(path) == expected, "protected state changed during arming: " + str(path))
+
+    write_marker_checked(marker, old, ARMED_MARKER, lambda: trial.marker_location(device),
+                         lambda: subprocess.run(["sync", "-f", str(ESP)], check=True), unchanged_selection)
+    print("ARMED ONCE: the next Linux start selects " + receipt["kernel_release"])
+    print("Persistent bringup default, baseline/rescue, guard and dependencies unchanged.")
+    print("Backup status: " + backup_status + "; non-writing discovery only, no sensor/enrollment.")
+    print("No reboot performed. Shut down fully, then start Linux with physical recovery available.")
+
+
+def cancel():
+    _, _, device = preflight(allow_armed=True)
+    marker = ESP / "aura-try"
+    old = trial.marker_location(device)
+    if old.startswith(b"spent\n"):
+        print("No trial is armed; no files changed.")
+        return
+    require(old == ARMED_MARKER, "trial marker belongs to another candidate")
+    write_marker_checked(marker, old, SPENT_MARKER, lambda: trial.marker_location(device),
+                         lambda: subprocess.run(["sync", "-f", str(ESP)], check=True))
+    print("CANCELLED: SEP trial disarmed; persistent default unchanged, no reboot.")
 
 
 def stage(apply):
@@ -165,10 +243,22 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--stage", action="store_true", help="install the isolated candidate, without arming")
     modes.add_argument("--check-staged", action="store_true", help="validate the already staged, unarmed candidate")
+    modes.add_argument("--arm", action="store_true", help="arm the verified SEP candidate once for an attended cold boot")
+    modes.add_argument("--cancel", action="store_true", help="disarm only this SEP trial without requiring candidate modules")
     parser.add_argument("--acknowledge-risk", action="store_true", help="acknowledge experimental SEP/boot recovery risks")
+    parser.add_argument("--attended-cold-boot", action="store_true", help="attest saved work and physical recovery access")
+    backup = parser.add_mutually_exclusive_group()
+    backup.add_argument("--backup-verified", action="store_true", help="attest a current verified backup and retained macOS")
+    backup.add_argument("--waive-backup", action="store_true", help="explicitly accept proceeding without the recommended backup")
     args = parser.parse_args()
-    require(not args.stage or args.acknowledge_risk, "staging requires --acknowledge-risk")
-    if args.check_staged:
+    require(not (args.stage or args.arm) or args.acknowledge_risk, "staging/arming requires --acknowledge-risk")
+    require(not args.arm or (args.attended_cold_boot and (args.backup_verified or args.waive_backup)),
+            "arming requires attended cold boot and explicit backup attestation or waiver")
+    if args.arm:
+        arm("owner-attested-verified" if args.backup_verified else "waived-by-owner")
+    elif args.cancel:
+        cancel()
+    elif args.check_staged:
         check_staged()
     else:
         stage(args.stage)

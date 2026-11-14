@@ -180,7 +180,10 @@ def live_target():
     require(fsuuid == guid(identity["filesystem_uuid"]) == guid(deployment["filesystem_uuid"])
             == guid(cmdline["j716s.root-fsuuid"]), "root filesystem binding differs")
     validate_baseline(Path("/"), deployment)
-    require(stage.marker_location(mounted["/boot"]) == b"spent\naurora/open-wifi.bin\n", "trial marker is not this candidate's spent marker")
+    spent_markers = {("spent\naurora/" + variant + ".bin\n").encode("ascii")
+                     for variant in candidate_boot.VARIANTS}
+    require(stage.marker_location(mounted["/boot"]) in spent_markers,
+            "trial marker is armed or belongs to an unreviewed candidate")
     return identity, deployment
 
 

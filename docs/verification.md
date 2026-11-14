@@ -228,3 +228,26 @@ The source checkpoint does not promote SEP discovery to Touch ID support.
   and the separately attended SEP cold-boot discovery. SEP remains unarmed;
   its SPI sensor, enrollment, persistent selection and enclave writes stay off.
 
+
+## SEP trial arming verification — 2026-11-14
+
+- Twenty-six SEP authorization/DT/marker cases and fourteen existing persistent
+  selection cases passed. Nine new marker cases cover exact in-place updates,
+  stale disk readback, concurrent marker/default changes, interruption, flush
+  errors, symlinks and cancellation without candidate modules/receipts.
+- The real CLI refused arming without attended-cold-boot and backup-attestation
+  or waiver flags before touching target files. The staged candidate's actual
+  read-only check passed from the running bringup kernel.
+- A throwaway live-identity preflight with simulated marker bytes accepted a
+  reviewed spent SEP marker and rejected an armed one; no file was written by
+  that simulation. This establishes rollback-gate compatibility, not a trial boot.
+- Owner explicitly waived the backup after the shared SSD/SEP risk was stated;
+  physical recovery and saved work were confirmed. The private arming record
+  stores `waived-by-owner`, never a verified-backup claim.
+- Actual one-shot arming passed the live guard, full candidate receipt/module
+  validation, exact DT delta, protected-file invariants and direct-disk readback.
+  Only the existing trial marker and private arming receipt changed. Bringup
+  default, baseline/rescue, guard and dependencies were preserved.
+- No reboot, SEP registration, sensor access, enrollment or enclave-storage write
+  occurred. Trial boot/registration remain pending the owner's attended cold start.
+

@@ -148,3 +148,30 @@ Removing firmware does not stop an already loaded decoder. An attended decoder
 hang can require a physical power cycle; host queue tests and a short successful
 decode do not establish safe hardware recovery.
 
+
+## Attended SEP trial recovery
+
+The SEP trial uses the existing one-shot `aura-try` mechanism, not persistent
+publication. `scripts/stage-sep-probe.py --arm` requires risk acknowledgement,
+attended cold-boot readiness, and either an owner-attested verified backup or
+an explicit backup waiver. Retained macOS shares the SEP/SSD and is not a backup.
+
+Before shutdown, `sudo python3 -B scripts/stage-sep-probe.py --cancel` disarms
+only the SEP marker; it does not require intact candidate modules. The default
+bringup payload, baseline and rescue remain unchanged. On arming/readback failure,
+the original marker is restored without changing any boot selection.
+
+After Aura spends the trial marker, an ordinary Linux start should use the
+preserved bringup default. Failed-trial fallback is not physically qualified.
+The baseline/bringup rollback tools accept spent markers for reviewed variants,
+so a spent SEP marker no longer prevents restoration of a preserved default.
+An armed or unreviewed marker still refuses persistent-selection changes.
+
+If the trial hangs, shut down physically and use Startup Options to choose
+retained macOS or the preserved Linux default. Do not rearm or repeatedly load
+SEP to retry a failed registration. SEP may need a full physical power cycle;
+booting another OS without that reset is not an independent enclave session.
+No enrollment, sensor access, keybag writes, enclave reset or repartitioning is
+part of this trial. Keep the private arming receipt and first boot/registration
+logs locally. A backup waiver remains a risk acceptance, not qualification.
+

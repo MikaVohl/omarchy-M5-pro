@@ -216,3 +216,21 @@ The private Mesa prefix is `/opt/mesa-j716s`, built from the pinned Aurora Mesa 
 SDDM filters its daemon environment. Its greeter needs the private graphics variables through `[General] GreeterEnvironment`; an ordinary systemd `Environment=` override did not work.
 
 Full-notch mode needs both `appledrm.show_notch=1` on the kernel command line and `chosen.asahi,show-notch=1` in the Aura payload. Neither flag supplies a different board's display data.
+
+## SEP one-shot arming — 2026-11-14
+
+After the local source checkpoint and attended playback/streaming checks, the
+owner chose the separate SEP cold-boot experiment and explicitly waived the
+recommended backup. Physical recovery access and saved work were confirmed.
+Dual-boot macOS was explained as a recovery route sharing the SSD/SEP, not an
+independent backup. The private receipt records `waived-by-owner`.
+
+`scripts/stage-sep-probe.py --arm --acknowledge-risk --attended-cold-boot
+--waive-backup` passed the live boot guard, staged receipt/module checks, exact
+DT delta, unchanged default/rescue/dependency checks and direct-disk marker
+readback. The next Linux start is armed once for
+`7.3.0-j716s-8ab10100a4c1-sep-probe`; persistent bringup selection is unchanged.
+No shutdown/reboot, SEP registration, sensor access, enrollment or enclave write
+was performed. Actual trial boot and registration still await the owner's
+attended cold start. Arming is not evidence of Touch ID support.
+
