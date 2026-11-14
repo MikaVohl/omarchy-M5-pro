@@ -1,0 +1,15 @@
+[Unit]
+Description=Physical tty1 recovery after J716s boot identity failure
+After=local-fs.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/j716s/j716s-recovery.sh
+StandardInput=tty-force
+StandardOutput=journal+console
+StandardError=journal+console
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TimeoutStartSec=infinity

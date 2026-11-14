@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = *
+
+[Action]
+Description = Protect J716s kernel, loader, UUID and private graphics ownership
+When = PreTransaction
+Exec = /usr/bin/python /usr/local/lib/j716s/policies/j716s-policy.py transaction
+AbortOnFail
+NeedsTargets

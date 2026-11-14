@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "source_project": "https://github.com/betizzel/omarchy-m5",
+  "source_commit": "7974606ab1de0d41737f2c8784a7e86987612ce1",
+  "reference_sha256": {
+    "reference-source/finish-install.sh": "f548b0af4862927635b4d93694cb52c336219e4afad31d51fe6fb5775a733105",
+    "reference-source/prep-stub.sh": "ef36f4f4db73899b86bb4c7e6e13da6300b58f4c51da82fcbbff9faa37cb7253"
+  },
+  "files_sha256": {
+    "finish-install-j716s.sh": "1dc1274616d42c63b23006ce17749022b4db186b0dc346d247a14d4099a31bc2",
+    "finish-install-j716s.py": "597355e19116663ec5cf486cd32a4effc1ea1c486984d5f19ecac4f285818e13",
+    "prepare-stage1-j716s.sh": "19419fbef1cda73ec56ed60e3a283744935abb0a28d062d5ada9043d640c84be",
+    "finish-install-step2-j716s.sh": "c60a2e5ca8aa44b9370b1c50ef767a12a2a3fdb124801e22b9c2602bcd6114a4",
+    "mount-targets-j716s.sh": "a6f5759d308b7ca2092d3cf9452468fff22177256e5fea90b352fd36c24734ba",
+    "prep-stub-j716s.py": "2ead592e87f35488c06cb8b9457c14ef7e7c427df8bbd4ee1389506865e3253b",
+    "prep-stub-j716s.sh": "0cd20c7de2d4a2c0b40b0360d89756efb015d5d68c552aad28561a0cee97b4f8",
+    "preflight.py": "0b877faa0c92f0b93f6f996700682cd46a8271a991f8ef555c225e115a41dc21",
+    "partition_metadata.py": "024e0817eda1a72e915de29392504153d48ab2ff5ebe23e7cc5077ed72a57d53",
+    "update-deployment-provenance.py": "937005ed11a796d60ad2463fbae4f90161937cc88b9e96911b39fd7235329cdb"
+  },
+  "tools_sha256": {
+    "fill_stage1_config.py": "773ffcb0da679c1e5d96f870a43373d59707ab86bbeb33582fb9a1c662d0bbbf",
+    "enroll-stage1.sh": "c16e4313a3bb2cdf603706c6a73364b290a84e205da4b6945dd48b26b3729253"
+  },
+  "upstream_tool_sha256": {
+    "fill_stage1_config.py": "773ffcb0da679c1e5d96f870a43373d59707ab86bbeb33582fb9a1c662d0bbbf",
+    "enroll-stage1.sh": "2b8e92477975828320a7db043cdd9a7a724fca8cd47d494b2c2e4852cb148a61"
+  },
+  "changes": [
+    "Discover and journal fresh running-root source identities and exact Apple partition baseline",
+    "Require fresh physical backup confirmation, explicit apply and paired-volume owner authentication",
+    "Consume fresh pinned kernel, qualified-patch loader and ESP-specific rescue manifests",
+    "Raw Stage 1 only; remove failed-Mach-O replacement and dated host-instance paths",
+    "Bind Recovery resources, copied assets, source group and complete final partition layout"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "keys": [
+    {
+      "file": "omarchy-pkgs.gpg",
+      "primary_fingerprint": "40DFB630FF42BCFFB047046CF0134EE680CAC571",
+      "url": "https://raw.githubusercontent.com/omacom/omarchy-pkgs/fd8c31fd82fc406be5b616c7533f91991adb8cd7/pkgbuilds/omarchy-keyring/omarchy.gpg",
+      "sha256": "15d6aac44df688165b2ea35fe0b23af239bbc66a6909c10a5c219e8d94b707de",
+      "retrieved_at": "2026-11-12T23:31:03.581941+00:00"
+    },
+    {
+      "file": "asahi-alarm.gpg",
+      "primary_fingerprint": "12CE6799A94A3F1B5DDFFE88F576553597FB8FEB",
+      "url": "https://raw.githubusercontent.com/asahi-alarm/asahi-alarm-keyring/5103f1eb621b54d7e6fe87070042c2d297878456/asahi-alarm.gpg",
+      "sha256": "bd5a05085bc9ec99bc17156e60f5c7f1cd29f2b550bb80f652e0ba4a4820d5b2",
+      "retrieved_at": "2026-11-12T23:31:03.819118+00:00"
+    }
+  ],
+  "alarm_trust": "Official archlinuxarm-keyring package and pacman-key --populate archlinuxarm; never trust unsigned package payloads."
+}

@@ -1,0 +1,238 @@
+diff --git a/src/firmware.c b/src/firmware.c
+index 5908beda..8d0c05c5 100644
+--- a/src/firmware.c
++++ b/src/firmware.c
+@@ -215,6 +215,7 @@ const struct fw_version_info fw_versions[NUM_FW_VERSIONS] = {
+     // Same iBoot string as 27.0: detect_firmware() always picks V27_0. Verified from the J575D
+     // (M3 Ultra) 27.0.1 iBoot (26A434): both report "mBoot-20457.1.29", so no V27_0_1 exists.
+     [V27_0]      = {V27_0,      "27.0",        {27, 0, 0},     3, "mBoot-20457.1.29"},
++    [V27_3B1]    = {V27_3B1,    "27.3 beta1",  {27, 2, 98, 1}, 4, "mBoot-20457.60.65.0.1"},
+     // clang-format on
+ };
+ 
+diff --git a/src/firmware.h b/src/firmware.h
+index 347f12d5..a9599872 100644
+--- a/src/firmware.h
++++ b/src/firmware.h
+@@ -192,6 +192,7 @@ enum fw_version {
+     V26_7,
+     V26_7_1,
+     V27_0,
++    V27_3B1,
+     NUM_FW_VERSIONS,
+ };
+ 
+diff --git a/src/kboot_display_handoff.c b/src/kboot_display_handoff.c
+index f7a71965..be8c5a44 100644
+--- a/src/kboot_display_handoff.c
++++ b/src/kboot_display_handoff.c
+@@ -3231,16 +3231,17 @@ static bool dcp6_dt_describes(void *dt)
+  * iommu-addresses: only what the ADT says, checked against the device tree and the registers.
+  * The image is pinned because 27.0 and 27.0.1 report the same iBoot version.
+  */
+-#define T6050_DCP_UUID  "64863924-B56B-3E32-87FE-038677F52709"
+-#define T6050_NDISP     5       /* disp0 reg[0..4] are the dcp's disp-0..disp-4 */
+-#define T6050_BW_BASE   0x20000 /* bandwidth agent 0's scratch in the PMC metadata */
+-#define T6050_BW_STRIDE 0x4000
+-#define T6050_CLOCKS    4
+-#define T6050_MBOX      0x8000 /* the ASC mailbox, from the coprocessor base */
+-#define T6050_PATH      64
+-#define T6050_STATUS    "asahi,t6050-dcp-handoff"
+-#define T6050_TCR_WANT  (DART_T8110_TCR_TRANSLATE | DART_T8110_TCR_FOUR_LEVEL)
+-#define T6050_TCR_MASK  (T6050_TCR_WANT | DART_T8110_TCR_BYPASS_DART)
++#define T6050_DCP_UUID     "64863924-B56B-3E32-87FE-038677F52709"
++#define T6050_DCP_26C_UUID "58CB3FFC-B2BA-352E-B20B-71A91B15FA9F"
++#define T6050_NDISP        5       /* disp0 reg[0..4] are the dcp's disp-0..disp-4 */
++#define T6050_BW_BASE      0x20000 /* bandwidth agent 0's scratch in the PMC metadata */
++#define T6050_BW_STRIDE    0x4000
++#define T6050_CLOCKS       4
++#define T6050_MBOX         0x8000 /* the ASC mailbox, from the coprocessor base */
++#define T6050_PATH         64
++#define T6050_STATUS       "asahi,t6050-dcp-handoff"
++#define T6050_TCR_WANT     (DART_T8110_TCR_TRANSLATE | DART_T8110_TCR_FOUR_LEVEL)
++#define T6050_TCR_MASK     (T6050_TCR_WANT | DART_T8110_TCR_BYPASS_DART)
+ /* Runs once per boot: size over speed, and out of .text where it fits (aura.ld) */
+ #define T6050_INIT __attribute__((minsize, noinline, section(".init.t6050")))
+ #define T6050_TEXT __attribute__((minsize, noinline))
+@@ -3253,8 +3254,15 @@ static struct {
+     u64 coproc, pmc, pmc_size, vram, vram_size;
+     u32 bw_offset, nits, nclk, clk_id[T6050_CLOCKS], clk_hz[T6050_CLOCKS], pmc_ph;
+     const char *gamut;
++    const char *uuid;
++    const struct fw_version_info *compat;
++    bool j716s_26c;
+ } t6050;
+ 
++static const struct fw_version_info t6050_compat_26c = {
++    V27_3B1, "27.3", {27, 3, 0}, 3, "compat",
++};
++
+ /* The dcp's reg entries and the ADT reg each equals (coproc: a prefix of it) */
+ static const struct {
+     char name[10];
+@@ -3300,17 +3308,27 @@ static T6050_TEXT u32 t6050_add_node(void *dt, const char *parent, const char *n
+ }
+ 
+ /* The ADT side: firmware, VRAM and segments, bandwidth agent, clocks, panel */
+-static T6050_INIT int t6050_check_adt(void)
++static T6050_INIT int t6050_check_adt(void *dt)
+ {
+     u32 len = 0, val = 0;
+     int nub = adt_path_offset(adt, DCP6_NUB);
+     int disp0 = adt_path_offset(adt, "/arm-io/disp0");
+     const char *uuid = nub < 0 ? NULL : adt_getprop(adt, nub, "uuid", &len);
+ 
+-    if (os_firmware.version != V27_0)
++    t6050.j716s_26c =
++        os_firmware.version == V27_3B1 && !fdt_node_check_compatible(dt, 0, "apple,j716s");
++    t6050.uuid = t6050.j716s_26c ? T6050_DCP_26C_UUID : T6050_DCP_UUID;
++    t6050.compat = t6050.j716s_26c ? &t6050_compat_26c : &os_firmware;
++    if (t6050.j716s_26c) {
++        int chosen = fdt_path_offset(dt, "/chosen"), olen = 0;
++        const char *opt = chosen < 0 ? NULL : fdt_getprop(dt, chosen, "m5,t6050-display", &olen);
++        if (!opt || olen != 2 || strcmp(opt, "1"))
++            bail("J716s 26C handoff requires chosen.m5,t6050-display=1\n");
++    }
++    if (os_firmware.version != V27_0 && !t6050.j716s_26c)
+         bail("OS firmware %s is not 27.0\n", os_firmware.string);
+-    if (!dcp6_is_uuid(uuid, len) || strcmp(uuid, T6050_DCP_UUID))
+-        bail("DCP image %s is not " T6050_DCP_UUID "\n", dcp6_is_uuid(uuid, len) ? uuid : "(none)");
++    if (!dcp6_is_uuid(uuid, len) || strcmp(uuid, t6050.uuid))
++        bail("DCP image %s is not %s\n", dcp6_is_uuid(uuid, len) ? uuid : "(none)", t6050.uuid);
+     if (dcp6_adt_u32(nub, "running", &val) || val != 1 || disp0 < 0 ||
+         adt_getprop(adt, disp0, "external", NULL))
+         bail("the DCP is not running an internal panel\n");
+@@ -3363,7 +3381,9 @@ static T6050_INIT int t6050_check_adt(void)
+     const u32 *ids = adt_getprop(adt, disp0, "clock-ids", &len);
+     const u32 *freq = arm < 0 ? NULL : adt_getprop(adt, arm, "clock-frequencies", &flen);
+     t6050.nclk = ids ? len / 4 : 0;
+-    if (!t6050.nclk || len % 4 || t6050.nclk > T6050_CLOCKS || !freq)
++    /* Public J716s captures include an empty clock-ids list; the kernel accepts it. */
++    if ((!t6050.nclk && !(t6050.j716s_26c && ids && !len)) || len % 4 ||
++        t6050.nclk > T6050_CLOCKS || (t6050.nclk && !freq))
+         bail("no disp0 clock-ids or clock-frequencies\n");
+     for (u32 i = 0; i < t6050.nclk; i++) {
+         u32 idx = ids[i] - 256;
+@@ -3374,7 +3394,7 @@ static T6050_INIT int t6050_check_adt(void)
+     }
+ 
+     /* The panel's brightness scale, in nits (16.16) */
+-    int bl = adt_path_offset(adt, "/backlight-override");
++    int bl = adt_path_offset(adt, t6050.j716s_26c ? "/backlight" : "/backlight-override");
+     if (bl < 0 || dcp6_adt_u32(bl, "user-accessible-max-nits", &val) || !(val >> 16) ||
+         (val >> 16) > 10000)
+         bail("no panel user-accessible-max-nits\n");
+@@ -3407,8 +3427,9 @@ static T6050_INIT int t6050_check_dt(void *dt)
+     if (dcp6_status_disabled(dt, dcp, "dcp") || dcp6_status_disabled(dt, disp, "disp0"))
+         return -1;
+     if (fdt_getprop(dt, dcp, "memory-region", NULL) ||
+-        fdt_getprop(dt, disp, "memory-region", NULL) || fdt_getprop(dt, dcp, "clocks", NULL) ||
+-        fdt_getprop(dt, dcp, "apple,bw-scratch", NULL))
++        fdt_getprop(dt, disp, "memory-region", NULL) ||
++        (!t6050.j716s_26c &&
++         (fdt_getprop(dt, dcp, "clocks", NULL) || fdt_getprop(dt, dcp, "apple,bw-scratch", NULL))))
+         bail("the device tree already has a memory-region, clocks or apple,bw-scratch\n");
+ 
+     for (size_t i = 0; i < ARRAY_SIZE(t6050_regs); i++) {
+@@ -3487,8 +3508,8 @@ static T6050_TEXT int t6050_publish(void *dt)
+     if (firmware_set_fdt(dt, kboot_fdt_path_exact(dt, t6050.path[T6050_DCP]),
+                          "apple,firmware-version", &os_firmware) ||
+         firmware_set_fdt(dt, kboot_fdt_path_exact(dt, t6050.path[T6050_DCP]),
+-                         "apple,firmware-compat", &os_firmware) ||
+-        t6050_setprop(dt, T6050_DCP, "apple,firmware-uuid", T6050_DCP_UUID, sizeof(T6050_DCP_UUID)))
++                         "apple,firmware-compat", t6050.compat) ||
++        t6050_setprop(dt, T6050_DCP, "apple,firmware-uuid", t6050.uuid, strlen(t6050.uuid) + 1))
+         return -1;
+ 
+     /* The bandwidth scratch, in the PMC metadata (disp0 reg[4]), as register window 5 */
+@@ -3568,7 +3589,7 @@ static T6050_TEXT int t6050_ext_one(void *dt, int n)
+     snprintf(a, sizeof(a), "/arm-io/dcpext%d/iop-dcpext%d-nub", n, n);
+     int nub = adt_path_offset(adt, a);
+     const char *uuid = nub < 0 ? NULL : adt_getprop(adt, nub, "uuid", &len);
+-    if (!dcp6_is_uuid(uuid, len) || strcmp(uuid, T6050_DCP_UUID) ||
++    if (!dcp6_is_uuid(uuid, len) || strcmp(uuid, t6050.uuid) ||
+         dcp6_adt_u32(nub, "running", &val) || val != 1)
+         bail("dcpext%d: not running the pinned image\n", n);
+     snprintf(a, sizeof(a), "/arm-io/dcpext%d", n);
+@@ -3666,9 +3687,9 @@ static T6050_TEXT int t6050_ext_one(void *dt, int n)
+     if (firmware_set_fdt(dt, kboot_fdt_path_exact(dt, path[0]), "apple,firmware-version",
+                          &os_firmware) ||
+         firmware_set_fdt(dt, kboot_fdt_path_exact(dt, path[0]), "apple,firmware-compat",
+-                         &os_firmware) ||
+-        fdt_setprop(dt, kboot_fdt_path_exact(dt, path[0]), "apple,firmware-uuid", T6050_DCP_UUID,
+-                    sizeof(T6050_DCP_UUID)) ||
++                         t6050.compat) ||
++        fdt_setprop(dt, kboot_fdt_path_exact(dt, path[0]), "apple,firmware-uuid", t6050.uuid,
++                    strlen(t6050.uuid) + 1) ||
+         fdt_setprop(dt, kboot_fdt_path_exact(dt, path[0]), "apple,bw-scratch", v, sizeof(v)))
+         return -1;
+     if (output && fdt_appendprop(dt, kboot_fdt_path_exact(dt, t6050.path[T6050_DISP]), "iommus",
+@@ -3698,7 +3719,7 @@ static T6050_TEXT void t6050_ext_handoff(void *dt)
+ static T6050_TEXT void t6050_handoff(void *dt)
+ {
+     memset(&t6050, 0, sizeof(t6050));
+-    if (!t6050_check_adt() && !t6050_check_dt(dt) && !t6050_check_darts(dt)) {
++    if (!t6050_check_adt(dt) && !t6050_check_dt(dt) && !t6050_check_darts(dt)) {
+         void *scratch = dcp6_scratch(dt);
+         if (scratch && t6050_publish(scratch)) {
+             dlog("DT write failed (full?)\n");
+diff --git a/src/kboot_gpu.c b/src/kboot_gpu.c
+index 471ccdec..ada13d9f 100644
+--- a/src/kboot_gpu.c
++++ b/src/kboot_gpu.c
+@@ -3942,6 +3942,25 @@ static const struct {
+ };
+ extern void aura_sha256(const void *data, size_t size, u8 digest[32]);
+ 
++/* Exact J716s 26C5035r profile from Linux 8ab10100a4c1 hw/t6050.rs.
++ * Independently matched against the a010 TEXT of both public Apple IPSW roles. */
++static const struct {
++    u32 fill[8][2];
++    u8 sha[32];
++} t6050_gpu_26c = {
++    {{0x224, 4},
++     {0x23c, 8},
++     {0x4976c, 0x740},
++     {0x49eac, 0x231},
++     {0x50224, 4},
++     {0x5023c, 8},
++     {0x9d1ec, 0x740},
++     {0x9d92c, 0x231}},
++    {0xb5, 0x53, 0x7c, 0x8f, 0x06, 0xbd, 0x19, 0xeb, 0xf0, 0xef, 0xd0,
++     0xcb, 0xfb, 0x65, 0x52, 0x33, 0x9a, 0x10, 0xd4, 0xaf, 0xc4, 0xed,
++     0xa9, 0xd2, 0x1c, 0xbe, 0xdc, 0x36, 0x66, 0x76, 0x36, 0x00},
++};
++
+ /*
+  * r: the four UAT ranges, fw-text (from GFX's __TEXT, GFX1's after it) and fw-data (GFX's __DATA
+  * to GFX1's SRO end), base and size, from the ADT. Returns -1 if the device tree does not describe
+@@ -3950,6 +3969,16 @@ extern void aura_sha256(const void *data, size_t size, u8 digest[32]);
+  */
+ static T6050_GPU_TEXT_FN int t6050_gpu_check(void *dt, u64 r[12])
+ {
++    const u32(*fill)[2] = t6050_gpu.fill;
++    const u8 *sha = t6050_gpu.sha;
++    if (os_firmware.version == V27_3B1 && !fdt_node_check_compatible(dt, 0, "apple,j716s")) {
++        int chosen = fdt_path_offset(dt, "/chosen"), len = 0;
++        const char *opt = chosen < 0 ? NULL : fdt_getprop(dt, chosen, "m5pro,gpu", &len);
++        if (!opt || len != 2 || strcmp(opt, "1"))
++            return -1;
++        fill = t6050_gpu_26c.fill;
++        sha = t6050_gpu_26c.sha;
++    }
+     int gpu = kboot_fdt_path_exact(dt, "gpu");
+     if (gpu < 0 || fdt_node_check_compatible(dt, gpu, "apple,agx-g17s"))
+         return -1;
+@@ -3974,10 +4003,10 @@ static T6050_GPU_TEXT_FN int t6050_gpu_check(void *dt, u64 r[12])
+         return 1;
+     memcpy(copy, (const void *)seg[0], T6050_GPU_TEXT);
+     for (int i = 0; i < 8; i++)
+-        memset(copy + t6050_gpu.fill[i][0], 0, t6050_gpu.fill[i][1]);
++        memset(copy + fill[i][0], 0, fill[i][1]);
+     aura_sha256(copy, T6050_GPU_TEXT, digest);
+     free(copy);
+-    return memcmp(digest, t6050_gpu.sha, sizeof(digest)) ? 1 : 2;
++    return memcmp(digest, sha, sizeof(digest)) ? 1 : 2;
+ }
+ 
+ /* Enables every node of t6050_gpu.on, in order, if they all exist */

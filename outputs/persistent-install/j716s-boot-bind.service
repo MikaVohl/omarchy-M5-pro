@@ -1,0 +1,13 @@
+[Unit]
+Description=Validate J716s root image, true partition GUIDs and deployed boot payloads
+After=local-fs.target
+Before=j716s-firstboot.service display-manager.service
+OnFailure=j716s-recovery.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/j716s/j716s-bind-boot.py
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

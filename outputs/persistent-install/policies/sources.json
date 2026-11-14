@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "official_runtime_repository": "https://github.com/omacom/omarchy",
+  "template_commit": "ac6cb9c712848741f994d7ecbaccdbab90b526e8",
+  "templates": [
+    {
+      "file": "pacman-edge.conf",
+      "url": "https://raw.githubusercontent.com/omacom/omarchy/ac6cb9c712848741f994d7ecbaccdbab90b526e8/default/pacman/aarch64-apple/pacman-edge.conf",
+      "sha256": "db9e9116e99cfe32c6262168f40f19b97aaab98c3c5839bba085e88c995c218b"
+    },
+    {
+      "file": "mirrorlist-edge",
+      "url": "https://raw.githubusercontent.com/omacom/omarchy/ac6cb9c712848741f994d7ecbaccdbab90b526e8/default/pacman/aarch64-apple/mirrorlist-edge",
+      "sha256": "fdc2886bde74def87867200f0f548291c6951e472babed65daec590269b285a5"
+    }
+  ],
+  "warren_reference_commit": "b9d08697efd4060b82abda9cdf58dc3634b34622",
+  "edge_runtime": [
+    "omarchy-dev",
+    "omarchy-settings-dev",
+    "omarchy-mac"
+  ]
+}

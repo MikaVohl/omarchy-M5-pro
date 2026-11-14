@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Protect J716s boot ownership and guard prerequisites during removal
+When = PreTransaction
+Exec = /usr/bin/python /usr/local/lib/j716s/policies/j716s-policy.py transaction-remove
+AbortOnFail
+NeedsTargets

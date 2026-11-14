@@ -1,0 +1,21 @@
+[Unit]
+Description=Secure physical-console J716s owner and offline Omarchy setup
+Requires=j716s-boot-bind.service
+After=local-fs.target j716s-boot-bind.service systemd-user-sessions.service
+Before=getty@tty1.service display-manager.service
+ConditionPathExists=!/var/lib/j716s/firstboot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/j716s/j716s-firstboot.sh
+StandardInput=tty-force
+StandardOutput=journal+console
+StandardError=journal+console
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

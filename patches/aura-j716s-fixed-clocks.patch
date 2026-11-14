@@ -1,0 +1,26 @@
+--- a/src/kboot_display_handoff.c
++++ b/src/kboot_display_handoff.c
+@@ -3533,7 +3533,22 @@
+     for (u32 i = 0; i < t6050.nclk; i++) {
+         snprintf(name, sizeof(name), "clock-dcp-firmware-%u", t6050.clk_id[i]);
+         snprintf(node, sizeof(node), "/%s", name);
+-        cells[i] = cpu_to_fdt32(t6050_add_node(dt, "/", name));
++        int clock = kboot_fdt_path_exact(dt, node);
++        u32 phandle;
++        if (clock >= 0) {
++            /* J716s already declares these providers; preserve their consumers' phandles. */
++            int len = 0;
++            const fdt32_t *count = fdt_getprop(dt, clock, "#clock-cells", &len);
++            if (fdt_node_check_compatible(dt, clock, "fixed-clock") || !count ||
++                len != sizeof(*count) || fdt32_ld(count))
++                return -1;
++            phandle = fdt_get_phandle(dt, clock);
++        } else if (clock == -FDT_ERR_NOTFOUND) {
++            phandle = t6050_add_node(dt, "/", name);
++        } else {
++            return -1;
++        }
++        cells[i] = cpu_to_fdt32(phandle);
+         ids[i] = cpu_to_fdt32(t6050.clk_id[i]);
+         nlen += snprintf(names + nlen, sizeof(names) - nlen, "firmware-%u", i) + 1;
+         if (!cells[i] ||

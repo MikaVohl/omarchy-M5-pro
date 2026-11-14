@@ -1,0 +1,64 @@
+{
+  "schema": "j716s-graphics-v1",
+  "source": {
+    "repository": "https://github.com/aurora-silicon/mesa",
+    "branch_context": "agx3c",
+    "commit": "a8e86a80cdc4695d00e7e63b8ebea263e557431b",
+    "commit_date": "2026-11-07T03:03:45Z",
+    "archive": "https://codeload.github.com/aurora-silicon/mesa/tar.gz/a8e86a80cdc4695d00e7e63b8ebea263e557431b",
+    "archive_sha256": "fa866896387c27e57263e4f1c7764d3daa3b4d2de7a6d1f04da4ecb25f73b421",
+    "patches": []
+  },
+  "kernel": {
+    "artifacts": "outputs/kernel-candidate",
+    "source_commit": "8ab10100a4c1c944797e3fc8345589aff57777df",
+    "selection": "native T6050 G17S hardware; pinned gpu,t6050 driver selects ProbeConfig::G17M5 independently of the base T8142 backend",
+    "fresh_build_manifest": "outputs/kernel-candidate/build-manifest.json"
+  },
+  "abi": {
+    "kernel_header_sha256": "2c0e4d2da6493d26f9c0d0b6ac61db022902ebf53b004f5ce753b2b7e83ac9c6",
+    "mesa_header_sha256": "75e496826dae573b5135b62607c1397a13d7d3a84fc5e15d0680df230b84e6a3",
+    "byte_identical": false,
+    "exact_diff": "asahi-uapi.diff",
+    "changes": [
+      "Comment clarifies that M5 reports existing feature COMPUTE_NO_QUERY_ACCESS (bit 30). Mesa hk_queue.c:129-135 already gates command flag on that feature.",
+      "Kernel adds DRM_ASAHI_FEATURE_COMPUTE_VISIBLE_COMPLETION at bit 34 and DRM_ASAHI_COMPUTE_VISIBLE_COMPLETION at bit 20; no fields, struct layout, ioctl IDs, existing flags or feature bit values change."
+    ],
+    "compatibility": "backward-compatible optional extensions; keep pinned Mesa's own header, no blind header copy or kernel/firmware ABI change",
+    "evidence": [
+      "Mesa src/asahi/lib/agx_device.c:707-724 zeroes GET_PARAMS buffer and supplies its size; kernel drivers/gpu/drm/asahi/file.rs:538-578 writes min(kernel struct size, userspace buffer size).",
+      "Kernel drivers/gpu/drm/asahi/g17/mod.rs:1129-1132 includes feature bit30; :2462-2475 optionally reports bit34 without requiring it from userspace.",
+      "Pinned Mesa hk_queue.c:129-143 does not define or emit the new bit20, keeping the command flags zero except for previously negotiated matrix/query flags.",
+      "Kernel drivers/gpu/drm/asahi/g17/command.rs:713-779 accepts old flags and sets visible_completion=false when new flag20 is absent.",
+      "Kernel drivers/gpu/drm/asahi/g17/fw/m5/initdata.rs:3509-3514 describes host waits for unflagged compute. Actual g17/queue/mod.rs:554-562 only marks a firmware source when visible_completion is true (or not required), and g17/fence.rs:168-172 excludes unflagged sources from firmware waits. This retains conservative host synchronization, not a firmware ABI mismatch."
+    ],
+    "qualification": "source inspection only; integrated compile and physical GPU/display qualification are separate"
+  },
+  "build": {
+    "prefix": "/opt/mesa-j716s",
+    "architecture": "aarch64",
+    "userspace": "same ArchLinuxARM image chroot as final root",
+    "gallium": ["asahi", "zink", "llvmpipe", "softpipe"],
+    "vulkan": ["asahi"],
+    "tools": [],
+    "drm_shim": false,
+    "gl_api_path": "zink over native Asahi Vulkan; not software rendering",
+    "build_packages": ["base-devel", "meson", "ninja", "python", "python-mako", "python-pyyaml", "python-packaging", "python-ply", "llvm", "clang", "spirv-llvm-translator", "spirv-tools", "glslang", "pkgconf", "libdrm", "libglvnd", "wayland", "wayland-protocols", "xorgproto", "libx11", "libxext", "libxcb", "libxshmfence", "libxxf86vm", "libxrandr", "expat", "zlib", "zstd", "elfutils"],
+    "runtime_packages": ["llvm-libs", "spirv-tools", "libdrm", "libglvnd", "wayland", "libx11", "libxext", "libxcb", "libxshmfence", "libxxf86vm", "libxrandr", "expat", "zlib", "zstd", "libelf", "vulkan-icd-loader", "vulkan-tools", "python"],
+    "runtime_dependency_evidence": "Completed build receipt records ELF NEEDED for every installed ELF; clang/spirv-llvm-translator are build-only with Rusticl and installed shader compilers disabled.",
+    "receipt": "/opt/mesa-j716s/share/j716s/build-receipt.json",
+    "inventory": "/opt/mesa-j716s/share/j716s/prefix-inventory.json"
+  },
+  "session": {
+    "gl": "zink over native Borealis/Honeykrisp Vulkan",
+    "bringup_environment": "ASAHI_M5_BRINGUP=1",
+    "kms": "driver/connector discovery; the managed owner session and firstboot require connected native DCP via --allow-dcp, with no simpledrm fallback or frozen DRM card number",
+    "render": "actual asahi/aurora render node, GET_PARAMS generation17/chip0x6050 and Vulkan DRM properties matched to that node; software device rejected",
+    "source_recipe_qualification": "J716s native G17S GPU/DCP, Wi-Fi/input and full-notch 3456x2234@120 were qualified on the original machine; freshly rebuilt outputs require separate hardware validation",
+    "fresh_build_hardware_qualified": false,
+    "speakers": "disabled until a qualified machine-specific audio profile exists",
+    "owner_install_api": "/usr/local/libexec/j716s-session-env --user USER",
+    "greeter_install_api": "/usr/local/libexec/j716s-session-env --greeter ([General]GreeterEnvironment, not service Environment)",
+    "preflight_api": "/usr/local/bin/j716s-gpu-preflight [--session-env] [--allow-dcp]"
+  }
+}

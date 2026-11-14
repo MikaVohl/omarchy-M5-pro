@@ -1,0 +1,22 @@
+--- a/src/startup.c
++++ b/src/startup.c
+@@ -227,6 +227,19 @@
+     uart_puts("Initializing");
+     get_device_info();
+ 
++#ifdef J716S_KIS_DIAGNOSTIC
++#ifndef ESP_STAGE2
++#error J716S_KIS_DIAGNOSTIC requires an isolated ESP Stage 2
++#endif
++    if (chip_id != T6050 || !adt_is_compatible(adt, 0, "J716sAP"))
++        panic("J716s KIS diagnostic: wrong target\n");
++    if (!boot_options_append(cur_boot_args.rv3.cmdline, command_capacity, "aura-debug"))
++        panic("J716s KIS diagnostic: no room for aura-debug\n");
++    boot_options_init(cur_boot_args.rv3.cmdline, command_capacity);
++    boot_options_set_stage1(false);
++    printf("J716s KIS diagnostic: in-memory aura-debug enabled, DockChannel channel 1\n");
++#endif
++
+     printf("CPU init (MIDR: 0x%lx smp_id:0x%x)...\n", mrs(MIDR_EL1), smp_id());
+     init_cpu();
+     printf("\n");
