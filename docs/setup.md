@@ -424,7 +424,9 @@ sudo python3 -B scripts/stage-sep-probe.py --arm --acknowledge-risk \
 An owner who explicitly accepts proceeding without that backup must instead use
 `--waive-backup`; the private arming receipt records `waived-by-owner`, not a
 verified-backup claim. This exception does not authorize sensor access,
-enrollment, FileVault/keybag operations or enclave-storage writes.
+enrollment, FileVault/trusted-key API use, manual keybag calls or enclave-storage
+writes. The discovery bootstrap may open the existing key store in non-writing
+keystore-only mode; this does not authorize provisioning or persistence.
 
 Arming verifies the candidate and exact DT delta, preserves every default/root/
 rescue dependency, and writes only the existing `aura-try` marker in place plus
@@ -446,8 +448,25 @@ Shut down fully, then start Linux. Expect
 spent before trial loading, so the following ordinary Linux start should return
 to bringup; fallback after a failed trial is not physically qualified.
 
-Only after verifying that trial boot, explicitly load SEP once with all six
-non-writing discovery parameters. Do not unload/reload to retry registration,
+Only after verifying that trial boot, inspect the module plan:
+
+```sh
+modprobe -n -v apple_sep
+```
+
+Require exactly one copy of each safe option: `xart_writes=0`,
+`provision_keybag=0`, `xart_guard=2`, `trusted_keys=0`, `filevault_api=0`,
+`keystore_only=1`. kmod imports these from the trial kernel command line.
+Do not append them again: Rust parameters are write-once, and duplicates return
+`EEXIST` before driver initialization; kmod can report success despite no module.
+If the plan is missing, duplicated or different, stop before loading.
+
+```sh
+sudo modprobe apple_sep
+```
+
+Record the attempt before loading and inspect the bound driver and readiness
+journal, not only modprobe's exit code. Do not unload/reload to retry registration,
 open `/dev/sep-bio`, write `complete_attach`, enroll, or reset enclave state.
 Capture the first registration result and arrange a cold power cycle/macOS
 check afterward. See [recovery](recovery.md#attended-sep-trial-recovery).

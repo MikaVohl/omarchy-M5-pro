@@ -9,6 +9,7 @@
 - Add explicitly attended one-shot SEP arming/cancellation, private backup attestation/waiver, direct-disk marker readback and failure restoration; keep persistent selection forbidden.
 - Preserve baseline/bringup rollback after a reviewed SEP marker is spent; reject armed and unreviewed trial markers.
 - Add isolated marker durability, interruption, concurrent-change and missing-module cancellation regressions.
+- Record the observed J716s cold-boot SEP discovery (12 endpoints, 1442 ms ready) and correct the load procedure to avoid duplicated Rust write-once parameters; keep sensor/enrollment/persistence disabled.
 
 ## Bringup audit improvements — 2026-11-14
 

@@ -22,7 +22,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Not qualified | No claim of support |
-| Touch ID | Driver admission refused; read-only prerequisites inspected | No Linux SEP attachment, enrollment, or matching observed |
+| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms | Sensor remains disabled; no enrollment, matching or persistent biometric support |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
 The opt-in open-network Wi-Fi kernel
@@ -195,9 +195,9 @@ rescue, dependencies, guard and spent trial marker unchanged. The only DT
 changes are the SEP alias, mailbox enablement and always-on SEP power supplier;
 SPI2 and the sensor remain disabled. The candidate refuses unsafe module
 parameters and the `complete_attach` transition. Sixty-two authorization tests
-and three exact-DT/baseline-state regressions passed. No candidate reboot or
-Linux SEP attachment has been observed; enrollment and matching are still
-outside this preparation-only authorization.
+and three exact-DT/baseline-state regressions passed. At staging, the candidate
+had not booted or attached SEP; the subsequent cold-boot discovery is recorded
+below. Enrollment and matching remain outside the authorization.
 
 Experimental precedents include M4 Pro J616s
 ([reboot matching](https://github.com/aurora-silicon/linux/pull/545)), M4 Max
@@ -230,7 +230,43 @@ independent backup. The private receipt records `waived-by-owner`.
 DT delta, unchanged default/rescue/dependency checks and direct-disk marker
 readback. The next Linux start is armed once for
 `7.3.0-j716s-8ab10100a4c1-sep-probe`; persistent bringup selection is unchanged.
-No shutdown/reboot, SEP registration, sensor access, enrollment or enclave write
-was performed. Actual trial boot and registration still await the owner's
-attended cold start. Arming is not evidence of Touch ID support.
+At arming, no shutdown/reboot, SEP registration, sensor access, enrollment or
+enclave write had been performed. The subsequent trial boot and discovery are
+recorded below. Arming alone is not evidence of Touch ID support.
+
+
+## Observed SEP discovery — 2026-11-14
+
+The owner returned from the attended start running the exact `sep-probe` release,
+with `chosen/aurora,trial=aurora/sep-probe.bin`, all six safe parameters and a
+successful boot-binding service. The loader forwarded SEP firmware reservation,
+the 9,025-byte iBoot manifest and 2,898-byte local-policy manifest. The one-shot
+marker was spent and the persistent bringup default remained unchanged.
+
+The first explicit modprobe repeated the safe parameters already supplied by
+kmod from the kernel command line. Rust's `SetOnce` parameter storage rejected
+the duplicate assignments with `EEXIST`; kmod returned success even though no
+module loaded or driver initialization occurred. The rejected attempt was kept
+privately. A corrected dry-run showed each safe option exactly once; loading
+with `modprobe apple_sep` then performed the single actual discovery attempt.
+
+The J716s safety profile and `0x1c000` capacity were admitted. SEP/DART enabled
+and the platform driver bound. The driver read the APFS-resolved xART extent
+with 170 slots and 12 live records, reporting zero malformed, duplicate or
+repaired entries and writes disabled. It saw seven initial endpoints in 18
+messages, then advertised 12 endpoints (`cntl sbio scrd sse hdcp xars sks xarm
+hibe pnon skdl stac`) and reported ready in 1,442 ms with key store open.
+The ready-phase survey registered hwrng on attempt 1.
+
+This establishes the observed transport/discovery bootstrap only. The existing
+key-store open is part of keystore-only bootstrap; no manual keybag, FileVault,
+sensor, complete-attach, enrollment or persistence operation was issued. There
+are no biometric device nodes; the SPI sensor remains disabled. No failed
+system/user services were reported. Private attempt/results/journals remain
+under `/var/lib/j716s/sep-discovery/<boot-id>/`, excluded from source publication.
+
+Do not unload/reload or rearm to repeat registration. Return through a full
+power cycle and check retained macOS/Touch ID before another experiment. Linux
+Touch ID enrollment/matching and persistence are still unqualified; the
+discovery-only candidate is not promoted into the permanent bringup kernel.
 

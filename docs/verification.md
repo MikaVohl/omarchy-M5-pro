@@ -251,3 +251,31 @@ The source checkpoint does not promote SEP discovery to Touch ID support.
 - No reboot, SEP registration, sensor access, enrollment or enclave-storage write
   occurred. Trial boot/registration remain pending the owner's attended cold start.
 
+
+## Observed SEP trial boot and discovery — 2026-11-14
+
+- Exact `sep-probe` release, matching trial property and all six non-writing
+  parameters observed after the owner's start; the boot-binding service passed.
+  The loader supplied SEP firmware and 9,025/2,898-byte boot/policy manifests.
+- The initial guarded command duplicated kmod's command-line parameters. All
+  five Rust safety parameters were refused by write-once `SetOnce` storage;
+  no module/driver initialization occurred despite modprobe returning 0.
+  The rejected command/result/journal was retained, not treated as a pass.
+- A corrected dry-run proved exactly one copy of each safe option. One actual
+  `modprobe apple_sep` discovery attempt was recorded before loading. The module
+  loaded, the J716s profile bound and the driver enabled the SEP/DART changeset.
+- xART metadata read reported 170 slots, 12 live records, zero malformed,
+  duplicate or repaired records, writes disabled. The transport advertised seven
+  initial endpoints in 18 messages, then 12 endpoints; ready was reported in
+  1,442 ms with the existing key store open. hwrng registered after that survey.
+- The final ready-phase journal was saved privately. No failed system/user
+  services and no biometric device nodes were observed. No SEP device/sysfs
+  operation, sensor access, complete_attach, enrollment or manual keybag write
+  was issued. Host-state persistence remains deferred in keystore-only mode.
+- The persistent bringup payload stayed unchanged. Registration was not retried
+  and the successful module was not unloaded. A full power cycle and retained
+  macOS/Touch ID check are still required operator follow-through.
+
+This is successful SEP transport/discovery on the tested board/build, not Touch
+ID enrollment, matching, persistence or complete key-store/API qualification.
+
