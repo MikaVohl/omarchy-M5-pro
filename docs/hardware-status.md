@@ -13,7 +13,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | AirPods connected; HFP attempt reached controller setup on `touchid-sco-spk` | Enhanced synchronous setup rejected twice with status 0x11; SCO TX/RX stayed zero and recording timed out; isolated legacy-setup candidate building |
+| Bluetooth | AirPods connected; HFP attempt reached controller setup on `touchid-sco-spk`; isolated legacy-setup kernel built and selected | Enhanced setup rejected twice with 0x11 before SCO traffic; next manual `touchid-sco-spk-hfp` boot and microphone qualification still required |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
@@ -776,4 +776,15 @@ toggle, command translation, fake completion or admission relaxation. The
 candidate applies without fuzz; 51 authorization cases and the production
 capability predicate's four host cases passed. Full kernel build is running;
 legacy setup and microphone output still need a manual boot and hardware test.
+
+### Legacy-setup kernel build and selection
+
+The full `touchid-sco-spk-hfp` kernel build completed. Target preflight passed
+the pinned build/patch inventory, Bluetooth-only config delta, exact sensor DT
+delta, installed guard, partition identities and ESP-space checks. The owner
+authorized persistent activation. Publication and guard validation passed;
+the new candidate is selected for the next manual Linux boot. The working
+`touchid-sco-spk` default/runtime and baseline/rescue were preserved. No reboot
+or trial arming occurred. Legacy synchronous setup, microphone audio and the
+new kernel's speaker graph remain unqualified until that hardware return.
 

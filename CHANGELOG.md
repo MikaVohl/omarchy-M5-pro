@@ -7,6 +7,7 @@
 - Restore normal audio routes and retain filtered private transport evidence without publishing keys, addresses or audio.
 - Add an isolated pinned `touchid-sco-spk-hfp` recipe using the upstream controller-scoped legacy-setup quirk; preserve protected speakers, Touch ID, baseline/rescue and predecessor rollback.
 - Pass 51 authorization regressions, zero-fuzz patch preflight and the production capability predicate's host cases; require full build, target checks and a manual hardware boot before claiming voice.
+- Complete the full legacy-setup kernel build and target preflight; select it with owner authorization while preserving the working speaker default/runtime and rescue. No automatic reboot or hardware voice claim.
 
 ## Protected speaker playback - 2026-11-15
 

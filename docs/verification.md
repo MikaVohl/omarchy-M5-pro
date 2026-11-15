@@ -539,3 +539,9 @@ camera job is claimed.
 - Full candidate kernel build started. No legacy-command or microphone
   hardware qualification is inferred from the host checks.
 
+- The full legacy-setup kernel build completed. Target preflight passed exact
+  build/patch/config/DT, installed guard, partition and ESP-space checks.
+- Owner-authorized persistent selection and publication guard checks passed.
+  Previous protected-speaker default/runtime and baseline/rescue preserved;
+  no reboot or trial arming. Hardware legacy HFP/microphone proof remains pending.
+
