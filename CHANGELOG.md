@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Protected speaker playback - 2026-11-15
+
+- Boot the protected-ceiling kernel and pass fresh native voicing, silent wiring and 512-frame graph checks.
+- Observe fail-closed lease/owner-death withdrawal with zero-only audio, then ordinary restart and clean graph recovery.
+- Confirm owner-heard Mac speaker tone with live protection; persistently enable the guarded preview stack without claiming volume-sweep, lifetime, suspend or repeated-boot certification.
+- Defer AirPods microphone qualification at the owner's request; no HFP switch or recording performed.
+
 ## Guarded runtime and ALS enablement — 2026-11-15
 
 - Integrate native-capture repairs, install genuine ALS calibration and observe finite changing illuminance reports after targeted child-driver activation.

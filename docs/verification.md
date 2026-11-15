@@ -500,3 +500,24 @@ camera job is claimed.
 - The owner-ready bounded AirPods connection again failed at paging; no HFP
   profile selection or microphone recording was reached.
 
+## Post-reboot guarded speaker output - 2026-11-15
+
+- Actual `touchid-sco-spk` kernel, successful boot binding, no failed system
+  units, and unchanged 3456×2234/120 Hz panel observed.
+- Fresh 130,448-byte blob provisioning and bound-source zero-only wiring check
+  passed. A first invocation without the required tuning source refused before
+  hardware testing. Native voicing and complete live 512-frame graph checks
+  passed; five silent pilot starts had no xruns.
+- Upstream preview activation granted protection and reported supervising.
+  Zero-only pause and owner-death injections observed withdrawal after 32.9 ms
+  and 14.7 ms respectively; death readback showed woofer mute and non-running
+  PREPARED PCM. Recovery used ordinary supervisor restart and a fresh graph;
+  complete silent verification then passed.
+- A first submitted tone was muted, so no acoustic success is attributed to it.
+  The explicitly unmuted two-second 660 Hz tone at peak 0.15 completed, and the
+  owner confirmed hearing it from Mac speakers. Protection remained 1 and the
+  supervisor active afterward.
+- Persistent system/user startup enablement read back enabled. Repeat-boot,
+  suspend, volume-sweep and lifetime certification are not claimed. AirPods
+  connected but HFP/microphone testing was deferred by the owner.
+

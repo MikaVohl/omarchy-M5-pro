@@ -856,6 +856,25 @@ preserved by deployment; the current running kernel's modules are never replaced
 Preview is experimental and requires explicit acknowledgement, not a claim of
 independent lifetime or volume-sweep certification.
 
+After booting the selected protected-ceiling kernel, pass the explicit tuning
+source to the manual hardware check (omitting it refuses before testing):
+
+```sh
+sudo /usr/libexec/speakerguardd/speakerguardd-provision run
+sudo /usr/libexec/speakerguardd/speakerguardd-selfcheck run --force \
+  --switch-interface --params /var/lib/speakerguardd/params.bin \
+  -- /var/lib/aurora-speaker-upgrade/bundle
+```
+
+Only after complete graph/numerical verification and fault-withdrawal checks
+may the ordinary upstream preview switch grant protection. A playback test
+must target `sgv2.voicing.j716` explicitly and check its mute state; successful
+sample submission into a muted sink is not acoustic proof. The observed
+post-reboot controlled tone was owner-confirmed with protection continuously
+granted. Persistent startup uses the system supervisor, seat path and sleep
+hook plus the seat-user graph/session units; enabling the sleep hook does not
+qualify suspend/resume. Keep preview and repeated-boot limits explicit.
+
 ## Source maintenance and checks
 
 ```sh

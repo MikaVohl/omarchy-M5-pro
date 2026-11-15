@@ -18,7 +18,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
-| Audio | Native voicing, current-kernel silent wiring and live 512-frame pilots passed; protected preview installed | Supervisor withdrew on the kernel's −30 dB operating-cap mismatch; no nonzero test ran; protected-ceiling kernel pending |
+| Audio | `touchid-sco-spk` booted; fresh silent wiring/native voicing/512-frame graph checks passed; protected Mac speaker tone heard by owner | Preview enabled with live supervisor; pause/death withdrawal observed; volume-sweep, acoustic/lifetime and repeated-boot certification remain unqualified |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
@@ -713,4 +713,33 @@ After the owner offered to prepare the AirPods, one further bounded connection
 attempt again returned `br-connection-page-timeout` before HFP/SCO. No profile
 switch or microphone recording ran. This is a connection failure, not a SCO
 transport result; further attempts require the headset to be reachable.
+
+### Protected speaker playback qualified on the new kernel
+
+The owner returned running `7.3.0-j716s-8ab10100a4c1-touchid-sco-spk`.
+Boot binding passed, no system services failed and the panel stayed
+3456×2234 at 120 Hz. Fresh provisioning and zero-only hardware wiring passed
+for the 130,448-byte blob and `cbba18ec53f0a442` wiring. The first manual
+self-check omitted its tuning-source argument and refused before hardware
+testing; the bound-source invocation passed. Native full-volume voicing and
+the live 512-frame graph passed, including five silent starts without xruns.
+
+The ordinary upstream preview switch started a supervising daemon, and
+`Speaker Protection=1` was observed. A zero-only supervisor-pause test observed
+lease withdrawal in 32.9 ms and the speaker PCM in XRUN; resume requalified.
+Killing the owner observed withdrawal in 14.7 ms, woofer volume zero (mute),
+and a non-running PREPARED PCM. These include userspace detection, not
+worst-case latency guarantees. The supervisor restarted normally; a fresh
+PipeWire graph and complete silent verification passed after fault injection.
+
+The first one-second tone was submitted to a muted sink and is not an acoustic
+pass. At the owner's request, the sink was explicitly unmuted and a two-second
+660 Hz tone at peak 0.15 ran through `sgv2.voicing.j716`. The owner heard it
+from the Mac speakers; protection remained granted and the supervisor active.
+The system supervisor/seat path/sleep hook and seat-user graph/session units
+are persistently enabled. This qualifies basic guarded preview output, not
+full-scale/volume-sweep, acoustic/lifetime, suspend or repeated-boot safety.
+
+AirPods connected during the speaker checks. The owner deferred microphone
+qualification; no HFP profile switch or microphone recording ran.
 
