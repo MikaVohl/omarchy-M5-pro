@@ -7,6 +7,7 @@
 - Install required GStreamer plugins and correct read-only dynamic encoder device binding; compare actual reference pixels rather than only output lengths.
 - Record and preserve the speaker startup xrun refusal without relaxing checks or resetting counters.
 - Identify missing ANE type metadata from the actual bound ADT; prepare a J716s-only exact-property observation variant with existing identity/ownership gates preserved.
+- Complete exact-type ANE observation kernel build and target validation; select it with owner authorization while preserving the tested full kernel/runtime and rescue. No automatic reboot or engine startup.
 
 ## Broad guarded bringup candidate - 2026-11-15
 

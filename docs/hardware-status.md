@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | `7.3.0-j716s-8ab10100a4c1-bringup-full` booted; all 18 CPUs available | Boot binding passed; observation-only ANE metadata correction preparing |
+| Kernel | `bringup-full` remains running with tested media paths | Exact-type `bringup-ane-observe` built, target-checked and selected for later manual boot; identity observation pending |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -939,4 +939,14 @@ layout, owner, GPIO or cold-boot markers. The new `bringup-ane-observe` variant
 retains the tested full stack and all observation-only/pin/reservation gates.
 Its source consumer checks and 78 candidate/7 speaker-evidence cases passed;
 kernel build is running. ANE identity is not measured and no job has executed.
+
+### Exact-type ANE observation candidate selection
+
+The `bringup-ane-observe` full Image/modules build completed. Target preflight
+passed exact source/config/module/boot binding, sensor/KIS topology and exactly
+one native ANE type-cell allowance. Owner-authorized persistent activation and
+publication guard checks passed. The tested full kernel, module tree, runtime
+and baseline/rescue were preserved; no reboot or trial arming occurred.
+Observation-only mode remains mandatory. No ANE live TEXT digest, acquisition
+or job is claimed until the owner returns from a manual hardware boot.
 

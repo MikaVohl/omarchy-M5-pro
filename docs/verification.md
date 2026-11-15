@@ -625,3 +625,9 @@ camera job is claimed.
   production consumer gate checks passed. 78 candidate authorization cases
   passed with observation-only mode required. No live pin or ANE job claimed.
 
+- Exact-type observation kernel Image/modules build completed. Target preflight
+  passed source/config/module/boot, exact sensor/KIS DT plus native ANE type,
+  partition and ESP-space checks. Owner-authorized persistent selection passed
+  and preserved the tested full default/runtime, modules and baseline/rescue.
+  No reboot, trial arming, ANE identity measurement or engine job occurred.
+
