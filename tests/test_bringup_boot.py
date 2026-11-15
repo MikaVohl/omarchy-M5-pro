@@ -90,6 +90,16 @@ class BringupBootTests(unittest.TestCase):
         self.assertIsNone(self.validate())
         self.assertIsNone(f.validate_selection())
 
+    def test_running_default_accepts_only_an_authorized_newer_selection(self):
+        self.test_bound_trial_and_normal_default_are_accepted()
+        f = self.fixture
+        # A rollback to the baseline payload awaits reboot: the running default stays valid.
+        f.selected_path.write_bytes(b"baseline payload")
+        self.assertIsNone(self.validate())
+        f.selected_path.write_bytes(b"unauthorized payload")
+        with self.assertRaisesRegex(RuntimeError, "no unique pinned authorization"):
+            self.validate()
+
     def test_hash_rebound_unrelated_config_change_is_refused(self):
         text = (self.fixture.root / "boot" / self.prefix / ".config").read_text()
         self.rewrite_config(text.replace("CONFIG_MODULE_SIG=y", "# CONFIG_MODULE_SIG is not set"))

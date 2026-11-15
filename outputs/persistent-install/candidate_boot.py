@@ -387,4 +387,9 @@ def validate_running_kernel(root, baseline_release, identity, deployment, cmdlin
                 "candidate does not match its one-shot trial")
     else:
         require(variant not in ONE_SHOT_PARAMETERS, "SEP trial requires a matching one-shot trial")
-        _validate_persistent_selection(root, deployment, receipt)
+        # The running kernel's own default stays bound; a newer selection (a deployment
+        # or rollback awaiting reboot) must itself be authorized.
+        running_payload = next(entry["sha256"] for entry in receipt["files"] if entry["path"] == prefix + ".bin")
+        _validate_persistent_selection(root, deployment, receipt, running_payload)
+        if digest(safe_path(root, "boot/aurora/boot.bin")) != running_payload:
+            validate_boot_selection(root, baseline_release, identity, deployment)
