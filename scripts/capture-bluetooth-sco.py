@@ -6,8 +6,10 @@ pair, select a profile, send HCI commands, or start playback/recording. CAP_NET_
 (or sudo) and Linux Python 3.14+ are needed. A mandatory, locked kernel socket
 filter is installed BEFORE binding: ACL, ISO, vendor, pairing/key and unrelated
 traffic is dropped; SCO packets are truncated to the monitor + HCI SCO headers.
-Only allowlisted control fields and aggregate SCO header counts reach the private
-JSON bundle. Addresses are omitted. No raw packet or audio payload is saved.
+Only allowlisted control fields, aggregate SCO header counts and before/after
+kernel device counters reach the private JSON bundle. Addresses are omitted.
+No raw packet or audio payload is saved. Device snapshots use HCIGETDEVINFO on
+an unbound socket: no controller command, bind, send or statistics reset.
 
 Example (does not initiate any Bluetooth activity):
   sudo -n python3 -B scripts/capture-bluetooth-sco.py --controller hci0 \
@@ -16,6 +18,8 @@ Example (does not initiate any Bluetooth activity):
 Monitor TX precedes the driver send callback, so TX counts do NOT prove delivery.
 RX counts only cover frames the driver submitted to HCI, not unopened DMA rings.
 The monitor cannot recover firmware SCO framing, RX attributes or ring credits.
+Kernel sco_tx counts descriptor posting, not validated completion or air delivery;
+sco_rx counts core-received packets. Device totals are not link-specific.
 
 The exact-build native ring/framing contract is now extracted in
 prepare-bluetooth-native.py and implemented by kernel-j716s-bluetooth-sco.patch.
@@ -27,6 +31,7 @@ import argparse
 from collections import Counter
 import ctypes
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -42,6 +47,11 @@ HCI_CHANNEL_MONITOR = 2
 HCI_DEV_NONE = 0xffff
 SO_ATTACH_FILTER = 26
 SO_LOCK_FILTER = 44
+# include/net/bluetooth/hci_sock.h: _IOR('H', 211, int), native ABI.
+HCIGETDEVINFO = 0x800448d3
+HCI_DEVINFO_SIZE = 92
+DEVICE_STATS = ("err_rx", "err_tx", "cmd_tx", "evt_rx", "acl_tx", "acl_rx",
+                "sco_tx", "sco_rx", "byte_rx", "byte_tx")
 MAX_CONTROL_RECORDS = 10000
 # Standard HCI layouts: include/net/bluetooth/hci.h; monitor header: hci_mon.h.
 COMMANDS = {
@@ -168,6 +178,25 @@ def open_monitor(index):
     except BaseException:
         monitor.close()
         raise
+
+
+def read_device_info(index):
+    """Read existing kernel counters only; never bind, send or receive packets.
+
+    hci_sock_ioctl permits HCIGETDEVINFO only on RAW, not MONITOR sockets.
+    The fixed-width native hci_dev_info ABI is 92 bytes on Linux arm64:
+    buffer limits at 44, ten u32 counters at 52. Discard bdaddr/features.
+    """
+    info = bytearray(HCI_DEVINFO_SIZE)
+    struct.pack_into("@H", info, 0, index)
+    with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI) as device:
+        fcntl.ioctl(device.fileno(), HCIGETDEVINFO, info, True)
+    acl_mtu, acl_packets, sco_mtu, sco_packets = struct.unpack_from("@4H", info, 44)
+    return {"sampled_utc": datetime.now(timezone.utc).isoformat(),
+            "flags": struct.unpack_from("@I", info, 16)[0],
+            "acl_mtu": acl_mtu, "acl_max_packets": acl_packets,
+            "sco_mtu": sco_mtu, "sco_max_packets": sco_packets,
+            "stats": dict(zip(DEVICE_STATS, struct.unpack_from("@10I", info, 52)))}
 
 
 def u16(data, offset=0):
@@ -349,6 +378,7 @@ def capture(monitor, directory, index, duration, context):
     reason = "duration_elapsed"
     errors = []
     count = 0
+    device_before = read_device_info(index)
     directory.mkdir(mode=0o700, parents=False, exist_ok=False)
     descriptor = os.open(directory / "control.jsonl", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     digest = hashlib.sha256()
@@ -380,6 +410,12 @@ def capture(monitor, directory, index, duration, context):
         except (OSError, ProtocolError) as error:
             reason = "capture_error"
             errors.append(str(error))
+    device_after = None
+    try:
+        device_after = read_device_info(index)
+    except OSError as error:
+        reason = "capture_error"
+        errors.append("kernel device snapshot failed: " + str(error))
     summary = {
         "schema": 1, "started_utc": started_utc,
         "elapsed_seconds": round(time.monotonic() - started, 6),
@@ -390,10 +426,14 @@ def capture(monitor, directory, index, duration, context):
                     "acl_iso_vendor_key_packets": "dropped_in_kernel", "peer_addresses_saved": False},
         "control_records": count, "control_counts": dict(decoder.control_counts),
         "sco_headers": list(decoder.sco.values()), "errors": errors,
+        "kernel_device_info": {"before": device_before, "after": device_after},
         "files": {"control.jsonl": {"bytes": size, "sha256": digest.hexdigest()}},
         "limitations": [
             "No profile, pairing, controller command, playback or recording was initiated.",
             "TX monitor packets precede the driver send callback and do not prove wire delivery.",
+            "Kernel sco_tx counts driver descriptor posting, not completion or air delivery; sco_rx counts core-received packets.",
+            "Kernel device counters/buffer limits cover the whole controller; snapshots are not atomic with monitor start/stop.",
+            "HCIGETDEVINFO snapshots issue no controller command and discard the kernel-provided address/features.",
             "Elapsed event timestamps describe userspace receipt, not controller/air timestamps.",
             "RX covers HCI-delivered frames only; unopened SCO DMA resources remain invisible.",
             "Kernel allocation/socket-queue losses are not reported by this HCI monitor API; absence is not proof of no traffic.",
@@ -407,7 +447,7 @@ def capture(monitor, directory, index, duration, context):
     }
     private_write(directory, "summary.json", json.dumps(summary, indent=2) + "\n")
     print(f"Private SCO protocol metadata: {directory}; {count} control records; {reason}.")
-    print("No audio recorded or Bluetooth state changed; microphone support remains unqualified.")
+    print("No audio recorded or Bluetooth state changed; microphone qualification requires the independent recording result.")
     return 0 if reason == "duration_elapsed" else 1
 
 

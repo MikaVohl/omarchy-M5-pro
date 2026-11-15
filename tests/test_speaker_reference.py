@@ -18,7 +18,8 @@ class ReferenceAdmission(unittest.TestCase):
         self.request = {"unit_id": "a" * 64, "frames": 3, "speaker_id": 3}
         self.case = self.root / "refs/AID41-spid3"
         self.case.mkdir(parents=True)
-        self.meta = {"aid": 41, "channels": 6, "frames": 3, "param_wires": []}
+        self.meta = {"aid": 41, "channels": 6, "frames": 3, "param_wires": [],
+                     "params": {"mvsc": 1.0, "mvol": 0.0, "mmut": 0.0}}
         (self.case / "unit_in.f32").write_bytes(bytes(3 * 6 * 4))
         (self.case / "status.json").write_text(json.dumps({"rc": 0}))
         self.doc = {"schema": 1, "recipe": "j716s-native-voicing-result-v1",
@@ -62,6 +63,16 @@ class ReferenceAdmission(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-finite"):
             self.check()
 
+    def test_lower_volume_is_not_full_volume_reference(self):
+        self.meta["params"]["mvsc"] = 0.5
+        with self.assertRaisesRegex(ValueError, "full-volume"):
+            self.check()
+
+    def test_muted_native_output_is_not_parity_reference(self):
+        self.meta["params"]["mmut"] = 1.0
+        with self.assertRaisesRegex(ValueError, "full-volume"):
+            self.check()
+
     def test_wrong_vendor_case_cannot_escape_reference_inventory(self):
         self.doc["case"] = "../../other-unit"
         with self.assertRaisesRegex(ValueError, "case differs"):
@@ -81,6 +92,63 @@ class ReferenceAdmission(unittest.TestCase):
         (self.case / "unit_in.f32").symlink_to(target)
         with self.assertRaisesRegex(ValueError, "input changed"):
             m.checked_result(self.request, "b" * 64, self.root, sha)
+
+
+class ParityAdmission(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "parity.json"
+        self.request = {"key": "a" * 64, "law": "b" * 64, "speaker_id": 3}
+        self.entry = {"key": "a" * 64, "aid": 41, "speaker_id": 3, "also_speaker_ids": [],
+                      "verdict": "pass", "measured": 182, "worst_louder_db": 0.184, "worst_quieter_db": -0.048}
+        self.doc = {"format": 2, "law": "b" * 64,
+                    "tolerance": {"louder_db": 0.25, "quieter_db": 1.0, "floor_residue_db": 55.0},
+                    "releases": [{"build": m.BUILD, "rev": m.REV, "entries": [self.entry]}]}
+
+    def publish(self):
+        self.path.write_text(json.dumps(self.doc))
+        return m.digest(self.path)
+
+    def test_exact_externally_anchored_native_gate_is_admitted(self):
+        self.assertEqual(m.checked_parity(self.request, self.path, self.publish()), self.doc)
+
+    def test_other_build_or_law_cannot_admit_tuning(self):
+        for field, value in (("law", "c" * 64), ("format", 1)):
+            with self.subTest(field=field):
+                original = self.doc[field]
+                self.doc[field] = value
+                with self.assertRaisesRegex(ValueError, "format/law/tolerance"):
+                    m.checked_parity(self.request, self.path, self.publish())
+                self.doc[field] = original
+        self.doc["releases"][0]["build"] = "25G83"
+        with self.assertRaisesRegex(ValueError, "release/revision"):
+            m.checked_parity(self.request, self.path, self.publish())
+
+    def test_passing_label_does_not_override_failed_measurement(self):
+        for field, value in (("worst_louder_db", 0.251), ("worst_quieter_db", -1.001),
+                             ("worst_louder_db", float("nan")), ("measured", 0), ("measured", True)):
+            with self.subTest(field=field, value=value):
+                original = self.entry[field]
+                self.entry[field] = value
+                with self.assertRaisesRegex(ValueError, "measurements"):
+                    m.checked_parity(self.request, self.path, self.publish())
+                self.entry[field] = original
+
+    def test_other_vendor_or_key_cannot_reuse_passing_reference(self):
+        for field, value in (("speaker_id", 0), ("key", "c" * 64), ("also_speaker_ids", [0]), ("verdict", "refused")):
+            with self.subTest(field=field):
+                original = self.entry[field]
+                self.entry[field] = value
+                with self.assertRaisesRegex(ValueError, "identity/verdict"):
+                    m.checked_parity(self.request, self.path, self.publish())
+                self.entry[field] = original
+
+    def test_mutated_parity_cannot_reuse_external_digest(self):
+        sha = self.publish()
+        self.path.write_text("{}")
+        with self.assertRaisesRegex(ValueError, "external parity"):
+            m.checked_parity(self.request, self.path, sha)
 
 
 if __name__ == "__main__":

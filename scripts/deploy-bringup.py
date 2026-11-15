@@ -32,9 +32,11 @@ require = stage.require
 HELPER = stage.GUARD.parent / "candidate_boot.py"
 DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE),
               "touchid": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE),
-              "touchid-sco": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE)}
+              "touchid-sco": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE),
+              "touchid-sco-spk": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE,
+                                  candidate.VARIANTS["touchid-sco"]["release"])}
 # Defaults a rollback may restore besides the baseline payload.
-PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid")
+PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco")
 
 
 def select(variant):

@@ -458,3 +458,45 @@ qualification requires its own attended boot and hardware checks.
   machines. No Linux hardware identity was simulated and no reboot, microphone,
   nonzero speaker, camera/encoder/ANE job or ALS activation was performed.
 
+## Live enablement preparation — 2026-11-15
+
+- Returned native speaker/camera manifests and parity file matched their
+  independent hashes; full reference inventory and target camera admission
+  passed without starting a camera.
+- Genuine 193-byte ALS calibration passed unit/build/boot-guard/package checks,
+  installation and readback. Targeted ALS child rebind produced changing finite
+  illuminance reports after bounded first-report waiting. No AOP reset/reboot;
+  absolute accuracy and colour temperature remain unqualified.
+- Fifteen reference-admission, fourteen runtime package and twenty-two SCO
+  capture/privacy cases passed. The new collector's read-only HCIGETDEVINFO
+  snapshots ran against the actual idle controller without audio/state changes.
+- Five Rust native-release selection regressions and seven unit-identification
+  cases passed. Four asset-preservation regressions passed, including complete
+  fallback roundtrip and missing/corrupt/truncated/unknown-format refusal.
+  Incorrect synthetic fixture prerequisites were fixed, not hidden by narrowing
+  numerical assertions or stripping metadata.
+- The pinned runtime compiled and admitted the actual native law/key/reference;
+  full Spp3/voicing parameters, source/patch/test hashes and package inventory
+  were recorded privately. Actual isolated-root install/receipt rollback passed.
+- Current-kernel full-blob silent wiring and complete live graph verification
+  passed. Upstream preview switching used ordinary APIs and a qualified user
+  helper, not a manual marker. The supervisor's real −30 dB operating mismatch
+  withdrew protection; the nonzero attempt stopped before playback.
+- Thirty-nine candidate authorization cases and shell syntax passed for the
+  protected-ceiling variant. Its actual patched kernel max-volume/gain/start
+  bodies passed ASan/UBSan host checks preserving legacy/global/floor behavior.
+
+The new kernel and headset microphone are not hardware-qualified by these
+checks. The headset failed paging before any SCO/HFP test; an owner-ready
+device is required before another attempt. No nonzero speaker, encoder/ANE or
+camera job is claimed.
+
+- The complete protected-ceiling kernel build finished; target preflight passed
+  exact DT/config/build, guard, partition and ESP checks. Owner-authorized
+  persistent deployment and installed guard validation passed. Previous
+  default/runtime and baseline/rescue were preserved; no reboot/trial arming.
+- Withdrawal readback: graph/session user services inactive and disabled,
+  legacy safety masked, `Speaker Protection=0`.
+- The owner-ready bounded AirPods connection again failed at paging; no HFP
+  profile selection or microphone recording was reached.
+

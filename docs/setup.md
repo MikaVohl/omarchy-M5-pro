@@ -820,6 +820,42 @@ the ALS installer. HmCA/color data is not interchangeable. Installation alone
 does not activate or qualify ALS; kernel acquisition and lux behavior still
 need their own checks.
 
+## Guarded speaker runtime
+
+`scripts/prepare-speaker-runtime.py prepare` verifies the original pinned
+source, same-unit native request/reference and externally anchored parity,
+builds a separately bound candidate with native-release/unit-detection/asset
+repairs, and requires the complete numerical gate. Its package includes the
+actual upstream compiler, supervisor, LV2 graph, session/provision helpers and
+preview switch. `install` refuses existing files and enables/starts nothing;
+`rollback` removes only unchanged receipt-bound files after the stack is stopped.
+See `--help` for independent manifest and receipt hash arguments.
+
+On a dual kernel, initial qualification uses direct `provision run`, then
+`selfcheck run --force --switch-interface` on the provisioned full blob, graph
+generation and complete `selfcheck verify`. A qualified seat-user graph/session
+helper must run before the ordinary upstream preview switch; otherwise the
+supervisor correctly cannot grant. Do not write its persistent marker manually.
+The switch's installer route must preserve every declared native asset, including
+the 80-byte BuzzKill matrix. Never remove metadata to force compilation.
+
+The older `touchid-sco` kernel deliberately clamps J716s at −30 dB even under
+a grant, which the unity-gain protection model rejects. Do not weaken that
+readback check. The isolated `touchid-sco-spk` candidate changes only the exact
+J716s v2 operating ceiling, retaining legacy/global caps and floor/lease gates:
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-touchid-sco-spk
+sudo python3 -B scripts/deploy-bringup.py --variant touchid-sco-spk \
+  --baseline-config outputs/kernel-open-wifi-candidate/.config
+```
+
+An owner-issued restart and matching-kernel zero-only safety checks are required
+before preview audio. Baseline/rescue and the previous SCO/default payload are
+preserved by deployment; the current running kernel's modules are never replaced.
+Preview is experimental and requires explicit acknowledgement, not a claim of
+independent lifetime or volume-sweep certification.
+
 ## Source maintenance and checks
 
 ```sh

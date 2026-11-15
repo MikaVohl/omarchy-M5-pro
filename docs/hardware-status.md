@@ -13,12 +13,12 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | Connected headset/A2DP and controls observed; exact native standard-SCO transport candidate built | New SCO kernel not booted; microphone qualification pending; private HDR-SCO unsupported |
+| Bluetooth | Ordinary `touchid-sco` boot observed; earlier A2DP/controls worked | Headset page-timeout occurred before HFP/SCO testing; microphone still unqualified; private HDR-SCO unsupported |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
-| Battery / sensors | Battery/cpufreq/WFI telemetry; genuine same-unit 193-byte ALS CalibrationData captured in paired macOS | Calibration not installed or activated; ALS lux operation and TTPD semantics unqualified; HmCA remains separate |
-| Audio | Same-unit AID41 blob compiled; silent wiring/interlock checked; native 26C5035r full-volume voicing comparison passed | Controller state, volume sweeps, graph timing and new-kernel safety checks unqualified; normal speaker playback remains disabled |
+| Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
+| Audio | Native voicing, current-kernel silent wiring and live 512-frame pilots passed; protected preview installed | Supervisor withdrew on the kernel's −30 dB operating-cap mismatch; no nonzero test ran; protected-ceiling kernel pending |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
@@ -632,4 +632,85 @@ transferred source hashes verified. Raw reference audio, unit identity,
 calibration, tuning and registry evidence are not published. No reboot, Linux
 hardware qualification, nonzero speaker playback, headset voice test, camera
 session, encoder/ANE job or ALS activation was performed in this acquisition.
+
+## Linux return and ALS enablement — 2026-11-15
+
+The owner returned running `7.3.0-j716s-8ab10100a4c1-touchid-sco`. Its actual
+boot-binding service is active with result success/status 0 and no one-shot
+trial property. The panel remains 3456×2234 at 120 Hz with no Hyprland config
+errors or failed system services. Speaker output remained Dummy Output and
+`speakersafetyd` stayed masked; this is not a new-kernel speaker safety pass.
+
+The published native-capture repair commit `d042f387ff344037564110b5ba32685b6928b86e`
+was integrated without changing kernel artifacts. Returned speaker reference,
+camera acquisition and parity hashes matched the independent anchors; native
+reference inventory and camera `check-macos` passed on the actual J716s target.
+
+Genuine 193-byte CalibrationData was checked against the unit/build, prepared,
+then installed with a receipt and byte-exact readback. Only `als.4.auto` was
+unbound/rebound through its existing driver: no AOP reset or kernel restart.
+The first immediate IIO read returned ENODATA before an asynchronous report;
+bounded first-report waiting then produced changing finite values around
+122.27–122.50 lux. **Basic ALS illuminance reporting is enabled.** This does not
+establish absolute calibration accuracy or colour-temperature reporting.
+
+Connecting the paired headset on this boot failed with
+`br-connection-page-timeout`, before HFP profile selection or SCO audio.
+That failure is not evidence against the new SCO framing/transport. Another
+attempt requires the owner to wake/wear the headset and release other device
+connections; no repeated connection/recording pass was fabricated.
+
+## Protected runtime preparation — 2026-11-15
+
+The guarded runtime package builds the complete pinned upstream compiler,
+supervisor, LV2 graph and provisioning/session helpers from the original source
+plus explicit repairs. Numerical admission preserves the measured rendering
+law and tuning key. Collection release `26C5035r` is selected separately from
+effective law-build `25G83`; no old/native attestation was relabelled. The
+persistent switch identifies actual executable/ExecCondition metadata, not
+legacy names or argument words. Its re-collector now preserves and hash-checks
+the declared 80-byte BuzzKill matrix instead of retaining a manifest without
+its asset. Package installation/rollback is receipt-bound and services are not
+enabled by installation.
+
+Direct provisioning compiled the same-unit 130,448-byte full Spp3/voicing blob.
+The fresh silent wiring check passed on `touchid-sco`; complete numerical and
+generated 512-frame graph verification passed, including five zero-only pilot
+starts without xruns. Starting the qualified seat-user graph/session helper
+allowed the ordinary upstream preview switch to start its supervisor; no
+marker was written manually and no gate was removed.
+
+The supervisor then correctly withdrew its lease: a granted Left Woofer was
+still at −30 dB, not the native unity operating point the protection model
+requires. The running kernel intentionally caps this chassis at −30 dB with or
+without the legacy daemon. A one-second sound attempt stopped at its grant
+precondition; **no nonzero speaker sample was played**. The upstream switch
+was reverted, the preview stopped/muted and runtime-only user-unit enablement
+removed. Legacy speaker safety remains masked/guarded.
+
+The owner authorized an isolated `touchid-sco-spk` kernel candidate. Its patch
+caches exact J716s identity once and permits unity only in the v2 ownership
+interface, retaining the legacy/global cap, safe floor and lease/start gates.
+Host production-body checks passed for exact-board selection, legacy/global
+caps, unchanged floor and admission denial without a live grant. Other boards
+are not promoted. This candidate still needs full build/target checks and a
+manual owner restart, followed by its own hardware safety checks and controlled
+preview audio. Independent lifetime/acoustic/volume-sweep certification is not
+claimed.
+
+### Protected-ceiling candidate deployment
+
+The full `touchid-sco-spk` build completed. Target preflight verified its pinned
+build, Bluetooth-only config delta, exact sensor DT delta, installed guard,
+partition identities, ESP space and baseline/rescue preservation. The owner
+authorized activation; publication and guard checks selected it as the next
+persistent default. The previous default/runtime bytes were preserved. No reboot
+or trial arming occurred; the running kernel is still `touchid-sco` and speaker
+protection reads zero with both runtime user services inactive/disabled and
+legacy `speakersafetyd` masked. Fresh post-reboot hardware checks remain required.
+
+After the owner offered to prepare the AirPods, one further bounded connection
+attempt again returned `br-connection-page-timeout` before HFP/SCO. No profile
+switch or microphone recording ran. This is a connection failure, not a SCO
+transport result; further attempts require the headset to be reachable.
 

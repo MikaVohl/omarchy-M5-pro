@@ -97,6 +97,10 @@ def checked_request(root, expected):
             or any(c not in "0123456789abcdef" for c in unit)
             or type(frames) is not int or not 0 < frames <= 48000 * 60):
         raise ValueError("reference unit/vendor/frame identity missing")
+    for field in ("key", "law", "compiler_sha256"):
+        value = doc.get(field)
+        if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise ValueError("reference rendering identity missing")
     return doc
 
 
@@ -113,6 +117,9 @@ def checked_result(request, request_sha, root, expected):
     meta = json.loads((case / "meta.json").read_text())
     if status.get("rc") != 0 or meta.get("aid") != 41 or meta.get("channels") != 6:
         raise ValueError("native graph did not produce six AID41 lanes")
+    params = meta.get("params", {})
+    if any(params.get(name) != value for name, value in {"mvsc": 1.0, "mvol": 0.0, "mmut": 0.0}.items()):
+        raise ValueError("native reference is not the requested unmuted full-volume render")
     if meta.get("frames") != request["frames"] or (case / "unit_in.f32").stat().st_size != request["frames"] * 6 * 4:
         raise ValueError("native reference frame count differs")
     with (case / "unit_in.f32").open("rb") as audio:
@@ -121,6 +128,33 @@ def checked_result(request, request_sha, root, expected):
                 raise ValueError("non-finite native reference audio")
     if any("modelled_box" in note for note in meta.get("param_wires", [])):
         raise ValueError("modelled AudioUnit is not a native reference")
+    return doc
+
+
+def checked_parity(request, path, expected):
+    """Admit an externally anchored gate result, never an admission override."""
+    if digest(path) != expected:
+        raise ValueError("external parity hash differs")
+    doc = json.loads(path.read_text())
+    if (doc.get("format"), doc.get("law"), doc.get("tolerance")) != (
+            2, request["law"], {"louder_db": 0.25, "quieter_db": 1.0, "floor_residue_db": 55.0}):
+        raise ValueError("parity format/law/tolerance differs")
+    releases = doc.get("releases", [])
+    if len(releases) != 1 or (releases[0].get("build"), releases[0].get("rev")) != (BUILD, REV):
+        raise ValueError("parity release/revision differs")
+    entries = releases[0].get("entries", [])
+    if len(entries) != 1:
+        raise ValueError("expected exactly the same-unit reference tuning")
+    entry = entries[0]
+    if (entry.get("key"), entry.get("aid"), entry.get("speaker_id"), entry.get("also_speaker_ids"), entry.get("verdict")) != (
+            request["key"], 41, request["speaker_id"], [], "pass"):
+        raise ValueError("parity tuning identity/verdict differs")
+    measured = entry.get("measured")
+    louder, quieter = entry.get("worst_louder_db"), entry.get("worst_quieter_db")
+    if (type(measured) is not int or measured <= 0
+            or any(type(x) not in (int, float) or not math.isfinite(x) for x in (louder, quieter))
+            or louder > 0.25 or quieter < -1.0):
+        raise ValueError("parity measurements do not support the passing verdict")
     return doc
 
 

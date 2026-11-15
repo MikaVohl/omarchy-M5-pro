@@ -1,0 +1,35 @@
+--- a/sound/soc/apple/macaudio.c
++++ b/sound/soc/apple/macaudio.c
+@@ -276,6 +276,8 @@
+ 	 * context, at the lease's end. Read without spk_mutex.
+ 	 */
+ 	bool spk_granted;
++	/* Cached exact-board opt-in; only the v2 interface may use unity gain. */
++	bool v2_unity_gain;
+ 	/* The amps are at the operating gain (spk_mutex) */
+ 	bool spk_active;
+ 	/* A safe level that did not take: speaker playback refused until reload */
+@@ -513,7 +515,8 @@
+ /* Unlocked ceiling in dB: the lower of the machine's and the module's, <= 0 */
+ static int macaudio_max_vol(const struct macaudio_snd_data *ma)
+ {
+-	int cap = min(ma->cfg->max_vol, 0);
++	int cap = ma->v2_unity_gain && macaudio_spk_leased(ma) ? 0 :
++		  min(ma->cfg->max_vol, 0);
+ 
+ 	if (speaker_max_db < cap)
+ 		cap = max(speaker_max_db, -100);
+@@ -4460,6 +4463,13 @@
+ 	else
+ 		data->cfg = &macaudio_fallback_cfg;
+ 
++	/* Legacy J716 remains capped at -30 dB. Only the exact J716s board
++	 * may restore the native operating point under v2 ownership. Start
++	 * admission, lease expiry and the amp floor remain unchanged.
++	 */
++	data->v2_unity_gain = data->cfg == &macaudio_j716_cfg &&
++			      of_machine_is_compatible("apple,j716s");
++
+ 	card->fixup_controls = macaudio_fixup_controls;
+ 
+ 	ret = macaudio_parse_of(data);

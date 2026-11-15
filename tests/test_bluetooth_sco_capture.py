@@ -8,7 +8,7 @@ import stat
 import struct
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("bluetooth_sco_capture", ROOT / "scripts/capture-bluetooth-sco.py")
@@ -128,6 +128,50 @@ class PrivacyFilterTests(unittest.TestCase):
         monitor_socket.sendmsg.assert_not_called()
 
 
+class KernelDeviceInfoTests(unittest.TestCase):
+    def test_native_ioctl_layout_keeps_counters_but_discards_address_and_features(self):
+        device = MagicMock()
+        device.__enter__.return_value = device
+        device.fileno.return_value = 123
+
+        def device_info(fd, request, info, mutate):
+            self.assertEqual((fd, request, mutate), (123, 0x800448d3, True))
+            self.assertEqual(len(info), 92)
+            self.assertEqual(struct.unpack_from("@H", info)[0], 513)
+            info[10:16] = b"SECRET"  # bdaddr must not enter the returned metadata.
+            info[21:29] = b"FEATURES"
+            struct.pack_into("@I", info, 16, 3)
+            struct.pack_into("@4H", info, 44, 1021, 8, 60, 4)
+            struct.pack_into("@10I", info, 52, *range(10))
+
+        with patch.object(sco.socket, "socket", return_value=device) as opening, \
+             patch.object(sco.fcntl, "ioctl", side_effect=device_info) as ioctl:
+            snapshot = sco.read_device_info(513)
+        opening.assert_called_once_with(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
+        ioctl.assert_called_once()
+        self.assertEqual(snapshot["flags"], 3)
+        self.assertEqual(snapshot["sco_mtu"], 60)
+        self.assertEqual(snapshot["sco_max_packets"], 4)
+        self.assertEqual(snapshot["stats"], dict(zip(sco.DEVICE_STATS, range(10))))
+        self.assertNotIn("SECRET", json.dumps(snapshot))
+        self.assertNotIn("FEATURES", json.dumps(snapshot))
+        self.assertNotIn("bdaddr", snapshot)
+        for method in ("bind", "send", "sendmsg", "recv", "recvmsg"):
+            getattr(device, method).assert_not_called()
+        device.__exit__.assert_called_once()
+
+    def test_device_ioctl_failure_is_not_hidden_and_closes_socket(self):
+        device = MagicMock()
+        device.__enter__.return_value = device
+        with patch.object(sco.socket, "socket", return_value=device), \
+             patch.object(sco.fcntl, "ioctl", side_effect=OSError("device disappeared")):
+            with self.assertRaisesRegex(OSError, "device disappeared"):
+                sco.read_device_info(0)
+        device.__exit__.assert_called_once()
+        device.bind.assert_not_called()
+        device.send.assert_not_called()
+
+
 class ProtocolDecoderTests(unittest.TestCase):
     def setUp(self):
         self.decoder = sco.Decoder(0)
@@ -221,6 +265,13 @@ class ProtocolDecoderTests(unittest.TestCase):
 
 
 class CaptureBundleTests(unittest.TestCase):
+    def setUp(self):
+        snapshot_patch = patch.object(sco, "read_device_info", return_value={
+            "sco_mtu": 60, "sco_max_packets": 4,
+            "stats": {name: 0 for name in sco.DEVICE_STATS}})
+        self.device_snapshot = snapshot_patch.start()
+        self.addCleanup(snapshot_patch.stop)
+
     def test_private_bundle_contains_only_metadata_and_header_aggregates(self):
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / "private"
@@ -229,6 +280,9 @@ class CaptureBundleTests(unittest.TestCase):
             audio = monitor(7, struct.pack("<HB", 0x42, 13) + b"PRIVATE-AUDIO")
             packets = [event(0x2c, sync), filtered(sco.monitor_filter(0), audio)]
             monitor_socket.recvmsg.side_effect = [(packet, [], 0, None) for packet in packets] + [socket.timeout()]
+            before = self.device_snapshot.return_value
+            after = {**before, "stats": {**before["stats"], "sco_tx": 2, "sco_rx": 1}}
+            self.device_snapshot.side_effect = [before, after]
             with patch("builtins.print"):
                 result = sco.capture(monitor_socket, destination, 0, 1, {"kernel_release": "fixture"})
             self.assertEqual(result, 0)
@@ -243,6 +297,9 @@ class CaptureBundleTests(unittest.TestCase):
             self.assertEqual(summary["privacy"]["audio_payload_bytes_saved"], 0)
             self.assertEqual(summary["control_records"], 1)
             self.assertEqual(summary["sco_headers"][0]["packets"], 1)
+            self.assertEqual(summary["kernel_device_info"], {"before": before, "after": after})
+            self.assertEqual(self.device_snapshot.call_args_list,
+                             [call(0), call(0)])
             self.assertEqual(summary["files"]["control.jsonl"],
                              {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
             self.assertTrue(any("t2026-CentauriBeta.plist" in limitation for limitation in summary["limitations"]))
@@ -261,6 +318,30 @@ class CaptureBundleTests(unittest.TestCase):
                     self.assertEqual(sco.capture(monitor_socket, destination, 0, 1, {}), 1)
                 summary = json.loads((destination / "summary.json").read_text())
                 self.assertEqual(summary["stop_reason"], expected)
+
+    def test_initial_snapshot_failure_refuses_without_creating_bundle(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "private"
+            monitor_socket = MagicMock()
+            self.device_snapshot.side_effect = OSError("device unavailable")
+            with self.assertRaisesRegex(OSError, "device unavailable"):
+                sco.capture(monitor_socket, destination, 0, 1, {})
+            self.assertFalse(destination.exists())
+            monitor_socket.recvmsg.assert_not_called()
+
+    def test_final_snapshot_failure_preserves_incomplete_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "private"
+            monitor_socket = MagicMock()
+            monitor_socket.recvmsg.side_effect = socket.timeout()
+            self.device_snapshot.side_effect = [self.device_snapshot.return_value,
+                                                OSError("device disappeared")]
+            with patch("builtins.print"):
+                self.assertEqual(sco.capture(monitor_socket, destination, 0, 1, {}), 1)
+            summary = json.loads((destination / "summary.json").read_text())
+            self.assertEqual(summary["stop_reason"], "capture_error")
+            self.assertIsNone(summary["kernel_device_info"]["after"])
+            self.assertIn("device disappeared", summary["errors"][0])
 
     def test_existing_private_files_are_never_overwritten(self):
         with tempfile.TemporaryDirectory() as temporary:

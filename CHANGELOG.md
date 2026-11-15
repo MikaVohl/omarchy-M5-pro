@@ -1,6 +1,15 @@
 # Changelog
 
 
+## Guarded runtime and ALS enablement — 2026-11-15
+
+- Integrate native-capture repairs, install genuine ALS calibration and observe finite changing illuminance reports after targeted child-driver activation.
+- Add pinned, receipt-bound speaker runtime preparation/install/rollback with real numerical admission, complete upstream helpers and explicit preview activation.
+- Separate collection attestation release from effective rendering law without changing the measured law/key; fix v2 unit identification and preservation of declared BuzzKill matrix assets.
+- Observe current-kernel full-blob silent and live graph passes, then the supervisor's fail-closed −30 dB operating-cap refusal; retain muted safety rather than weakening readback.
+- Add an isolated protected-only J716s operating-ceiling kernel variant while preserving legacy/global/floor/lease gates; require an owner-issued restart and fresh hardware qualification.
+- Capture actual read-only HCI device counters alongside privacy-filtered SCO metadata, without fabricating transport or microphone success.
+
 ## Paired-macOS acquisition — 2026-11-15
 
 - Fix portable speaker reference tuning-root paths in preparation, native capture and comparison; capture a genuine same-unit six-channel native AudioUnit reference without audio-device access.

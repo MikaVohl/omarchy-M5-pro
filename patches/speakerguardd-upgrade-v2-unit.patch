@@ -1,0 +1,25 @@
+--- a/packaging/upgrade/aurora_speaker_upgrade/upgrade.py
++++ b/packaging/upgrade/aurora_speaker_upgrade/upgrade.py
+@@ -428,9 +428,20 @@
+     speakerguardd.service."""
+     for u in V2_UNITS:
+         r = systemctl("show", "-p", "ExecStart", "--value", u)
+-        if r.returncode == 0 and "speakerguardd-v2" in r.stdout:
++        if r.returncode == 0 and re.search(r"(?:^|[ {;])path=/usr/bin/speakerguardd-v2(?:[ ;}]|$)", r.stdout):
+             return u
+-    return V2_UNITS[0]
++        # The canonical name also belongs to legacy 0.1: require the actual
++        # executable and its v2 qualification command, not argument words.
++        if r.returncode == 0 and re.search(r"(?:^|[ {;])path=/usr/bin/speakerguardd(?:[ ;}]|$)", r.stdout):
++            condition = systemctl("show", "-p", "ExecCondition", "--value", u)
++            if condition.returncode != 0:
++                continue
++            for command in re.findall(r"\{[^{}]*\}", condition.stdout):
++                if (re.search(r"(?:^|[ {;])path=/usr/libexec/speakerguardd/speakerguardd-gate(?:[ ;}]|$)", command)
++                        and re.search(r"(?:^|[ {;])argv\[\]=/usr/libexec/speakerguardd/speakerguardd-gate v2(?:[ ;}]|$)", command)):
++                    return u
++    # An unidentified stack must not stop legacy or guess another unit.
++    raise Retry("no identifiable in-graph speakerguardd v2 service is installed")
+ 
+ 
+ def legacy_units():

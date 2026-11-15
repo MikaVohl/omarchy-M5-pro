@@ -170,6 +170,18 @@ class TouchidScoBootTests(TouchidBootTests):
             self.verify()
 
 
+class ProtectedSpeakerBootTests(TouchidScoBootTests):
+    """The operating ceiling is authorized only with its exact extra patch."""
+    VARIANT = "touchid-sco-spk"
+
+    def test_sco_only_build_cannot_claim_protected_ceiling(self):
+        f = self.fixture
+        f.receipt["build_manifest"]["patches"] = copy.deepcopy(candidate.VARIANTS["touchid-sco"]["patches"])
+        f.store_receipt()
+        with self.assertRaisesRegex(RuntimeError, "build pins"):
+            self.verify()
+
+
 class BringupPublicationTests(unittest.TestCase):
     def test_validation_failure_restores_previous_default_not_baseline(self):
         with tempfile.TemporaryDirectory() as temporary:

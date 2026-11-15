@@ -1,0 +1,21 @@
+--- a/packaging/upgrade/aurora_speaker_upgrade/asahi_firmware/audio_tuning.py
++++ b/packaging/upgrade/aurora_speaker_upgrade/asahi_firmware/audio_tuning.py
+@@ -652,6 +652,18 @@
+         else:
+             log.warning("This speaker tuning bundle has no lsm2 masker lattice (collected "
+                         "before the installer read it); collect it again on macOS")
++        buzzkill = meta.get("buzzkill_quadrature")
++        if buzzkill is not None:
++            if not isinstance(buzzkill, dict) or (
++                    buzzkill.get("path"), buzzkill.get("bytes"),
++                    buzzkill.get("version"), buzzkill.get("format"),
++                    buzzkill.get("sections")) != (
++                    "buzzkill-quadrature.bin", 80, 1,
++                    "f32le-sos4-output-major", 4):
++                raise ValueError("malformed BuzzKill quadrature record")
++            # The existing bounded-file/hash loop verifies these bytes before
++            # publication. Never retain metadata while dropping its asset.
++            records = records + [buzzkill]
+         if unit is None and spts is not None:
+             log.warning("This speaker tuning bundle does not name the Mac it was collected on "
+                         "(collected before the installer recorded it): Linux runs the speakers "

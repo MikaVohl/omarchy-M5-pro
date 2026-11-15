@@ -175,6 +175,28 @@ do not establish J716s AP/exclave takeover or privacy. Current
 still excludes this exact board/build. Paired-macOS acquisition remains private,
 source/identity-bound evidence, never a substitute for hardware qualification.
 
+### Guarded runtime and operating ceiling
+
+Runtime preparation verifies the original protection archive and separately
+binds the transport, native-release attestation, legacy-safe unit identification
+and declared-matrix preservation repairs and their regression inputs. It builds
+from a private copied source tree, not a modified original capture. The upstream
+voicing LAW excludes the parity reader and protection-unit code; the runtime
+nevertheless enforces the original externally measured LAW/key pair. Collection
+release and effective law-build are recorded separately, never relabelled.
+
+The package supplies ordinary upstream provisioning/selfcheck/preview-switch
+APIs and fails closed on missing source, numerical or hardware evidence. The
+installer refuses pre-existing distribution files; rollback removes only
+unchanged receipt-bound files after the graph/services are withdrawn.
+
+The J716s protected-ceiling patch targets the pinned kernel. Exact machine and
+J716 configuration are cached at probe; only the v2 interface may use the native
+unity operating ceiling. Legacy/global caps, start admission, lease expiry and
+safe-floor enforcement remain. Neither host tests nor an unbooted build confer
+hardware qualification. The currently running old cap was observed to make the
+supervisor withdraw; it was not bypassed with a readback or kernel-memory edit.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).
