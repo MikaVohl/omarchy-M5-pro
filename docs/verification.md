@@ -273,9 +273,17 @@ The source checkpoint does not promote SEP discovery to Touch ID support.
   operation, sensor access, complete_attach, enrollment or manual keybag write
   was issued. Host-state persistence remains deferred in keystore-only mode.
 - The persistent bringup payload stayed unchanged. Registration was not retried
-  and the successful module was not unloaded. A full power cycle and retained
-  macOS/Touch ID check are still required operator follow-through.
+  and the successful module was not unloaded. The owner subsequently reported
+  normal macOS and Touch ID function after returning from the experiment.
 
 This is successful SEP transport/discovery on the tested board/build, not Touch
 ID enrollment, matching, persistence or complete key-store/API qualification.
+
+
+## Owner-reported macOS return — 2026-11-14
+
+The owner reports macOS and Touch ID work normally following the SEP discovery
+trial. No additional hardware check was run to reconfirm that report. This is
+one owner-observed recovery result, not a storage-state audit, repeated recovery
+qualification, or permission to enable Linux biometric enrollment/persistence.
 

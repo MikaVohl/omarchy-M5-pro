@@ -265,8 +265,16 @@ are no biometric device nodes; the SPI sensor remains disabled. No failed
 system/user services were reported. Private attempt/results/journals remain
 under `/var/lib/j716s/sep-discovery/<boot-id>/`, excluded from source publication.
 
-Do not unload/reload or rearm to repeat registration. Return through a full
-power cycle and check retained macOS/Touch ID before another experiment. Linux
-Touch ID enrollment/matching and persistence are still unqualified; the
-discovery-only candidate is not promoted into the permanent bringup kernel.
+Do not unload/reload or rearm to repeat registration. Use a full power cycle
+before another experiment. Linux Touch ID enrollment/matching and persistence
+remain unqualified; the discovery-only candidate is not promoted into the
+permanent bringup kernel.
+
+
+### Owner-observed macOS return
+
+After the SEP discovery experiment, the owner reported that macOS and Touch ID
+work normally. This records one successful owner-observed return, not an
+independent biometric/storage audit or repeated recovery campaign. It does not
+qualify Linux sensor authentication, enrollment, matching or persistent writes.
 
