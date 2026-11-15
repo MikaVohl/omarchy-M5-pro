@@ -1,6 +1,12 @@
 # Changelog
 
 
+## Legacy HFP hardware results - 2026-11-15
+
+- Observe the HFP candidate boot and automatic protected speaker startup; pass fresh same-kernel wiring, native voicing and live 512-frame graph verification.
+- Confirm legacy synchronous setup selection on hardware, but record controller 0x11 rejection for both transparent/mSBC and CVSD voice settings, with no SCO traffic or recorded samples.
+- Restore normal audio routes and clear recording buffers. Keep microphone support unavailable; native vendor-routing source clues do not justify guessed commands, resets or another speculative kernel.
+
 ## AirPods synchronous setup candidate - 2026-11-15
 
 - Capture actual controller rejection of enhanced HFP synchronous setup (0x11), with no SCO traffic; distinguish a transient source from microphone success.

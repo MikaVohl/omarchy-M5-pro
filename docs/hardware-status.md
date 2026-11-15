@@ -13,7 +13,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | AirPods connected; HFP attempt reached controller setup on `touchid-sco-spk`; isolated legacy-setup kernel built and selected | Enhanced setup rejected twice with 0x11 before SCO traffic; next manual `touchid-sco-spk-hfp` boot and microphone qualification still required |
+| Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
@@ -787,4 +787,42 @@ the new candidate is selected for the next manual Linux boot. The working
 `touchid-sco-spk` default/runtime and baseline/rescue were preserved. No reboot
 or trial arming occurred. Legacy synchronous setup, microphone audio and the
 new kernel's speaker graph remain unqualified until that hardware return.
+
+### Legacy-setup hardware return and codec comparison
+
+The owner returned running `7.3.0-j716s-8ab10100a4c1-touchid-sco-spk-hfp`.
+Boot binding passed, no system services failed, and the speaker supervisor
+started automatically with protection granted. Complete same-kernel hardware,
+native voicing and live 512-frame graph verification passed, including five
+silent pilot starts without xruns. This observes protected startup on this
+boot, not repeated-boot, suspend or lifetime certification.
+
+An initial AirPods connection failed at paging. After the owner explicitly
+confirmed physical readiness, connection succeeded. Two distinct voice-mode
+experiments then targeted only the Bluetooth microphone source:
+
+| Requested profile | Actual setup command | Voice setting | Rejected attempts | Controller status | Recorded samples |
+| --- | --- | --- | --- | --- | --- |
+| mSBC / transparent | 0x0428, legacy | 0x0003 | 2 | 0x11 | 0 |
+| CVSD | 0x0428, legacy | 0x0060 | 1 | 0x11 | 0 |
+
+The first requests used 13 ms latency/retransmission 2; CVSD used 10 ms/1.
+Each Bluetooth-only recorder reached its 18-second bound with zero samples.
+Both independent 60-second privacy-filtered captures completed without errors:
+ten and six control records respectively, no SCO headers, no synchronous
+completion, and controller SCO TX/RX counters unchanged at zero. WirePlumber
+reported transport errors and the card remained on A2DP. Thus the quirk selects
+the intended command, but is **not sufficient to enable microphone audio**.
+The rejection precedes SCO DMA traffic and does not diagnose ring framing.
+
+Pre-test profile/default routes were restored and recording buffers cleared;
+no raw audio file was created. The final route check retained the protected
+speaker sink and built-in input defaults, with the supervisor active and
+`Speaker Protection=1`; no Bluetooth card was enumerated in that final check.
+
+Hash-verified native ARM64e inspection found the ACI voice-routing vendor
+command `0xfe10` and its dispatch reference. Correct T6050 routing selection
+and the successful native setup sequence remain unresolved. Its presence is
+not authorization to send a guessed payload; no vendor command, controller
+reset, new kernel patch or further recording retry was issued.
 

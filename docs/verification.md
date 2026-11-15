@@ -545,3 +545,23 @@ camera job is claimed.
   Previous protected-speaker default/runtime and baseline/rescue preserved;
   no reboot or trial arming. Hardware legacy HFP/microphone proof remains pending.
 
+## Legacy HFP hardware results - 2026-11-15
+
+- Actual HFP candidate boot, successful boot binding, automatic supervising
+  speaker service and grant observed. Complete new-kernel wiring/voicing/live
+  graph verification passed; five 512-frame silent starts had no xruns.
+- After an initial paging failure, the owner-ready AirPods connected. Legacy
+  setup selection was observed directly: two transparent-mode commands with
+  voice setting 0x0003, and a distinct CVSD command with 0x0060. All received
+  Command Status 0x11; neither recorder received any samples before its bound.
+- Both 60-second filtered captures completed without errors. Ten/six control
+  records, zero SCO headers, no synchronous completion and zero controller
+  SCO TX/RX deltas were observed. No codec or microphone success is inferred.
+- Original profile/default routes restored; empty private recording buffers
+  cleared, no raw audio file created. Final speaker grant/service remained
+  active; the final card listing enumerated no Bluetooth card.
+- Pinned native ARM64e voice configuration was inspected: an ACI 0xfe10
+  vendor-command path and dispatch reference were found, but correct live
+  T6050 routing/call sequence was not established. No speculative vendor
+  command, reset, kernel patch or further recording retry followed.
+
