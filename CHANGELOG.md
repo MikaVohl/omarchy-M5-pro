@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Live ANE identity and cross-build backend - 2026-11-15
+
+- Observe the exact admitted live ANE TEXT hash on the corrected metadata kernel without starting the engine.
+- Separate authorized acquisition boot policy from observation and migrate every caller; retain cold-state, ownership, stage-order and quarantine gates.
+- Share a pinned native-build/cross-build worker and locally validate returned architecture, release, signed modules, hashes and target DT preservation.
+- Launch a measured, 64-job EPYC cross-build with public inputs only; retain target data and deployment on the Mac.
+
 ## Hardware video encoding and HEVC decoding - 2026-11-15
 
 - Boot the integrated kernel and qualify 30-frame AVE H.264/HEVC Main encode with software decode and reference PSNR, plus bit-identical 30-frame AVD HEVC Main decode.

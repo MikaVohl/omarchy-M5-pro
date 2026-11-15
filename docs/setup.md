@@ -953,6 +953,28 @@ observation variants require `ane_t6021.ane_observe_only=1`. Preserve the curren
 tested full candidate for rollback. A later manual boot must first produce the
 recognized-reservation TEXT digest; engine/job proof remains independently gated.
 
+## Guarded ANE acquisition and remote cross-build
+
+The corrected observation boot measured the admitted live pin. A separate
+`bringup-ane-start` candidate may use `ane_t6021.ane_observe_only=0`; existing
+full/observation candidates still require 1. This does not waive cold-state or
+ownership checks. Failed stages stop and uncertain acquisition quarantines;
+never retry through resets or override the observation module in place.
+
+```sh
+python3 -B scripts/build-kernel-remote.py --jump JUMP --host BUILD_HOST \
+  --variant bringup-ane-start --jobs 64
+```
+
+Remote builds run native x86-64 LLVM/Rust targeting ARM64, not ARM emulation.
+Only public inputs upload. Archive/toolchain/source caches remain on the build
+host; the target's baseline DTB and private firmware/captures stay local. The
+shared finalizer validates raw artifact hashes, ARM64 Image bounds, signed
+module architecture/vermagic and source pins before transforming the DTB and
+publishing final manifests. Full debug modules are retained for the first
+benchmark; do not strip already signed modules. Selection remains an explicit
+owner-authorized step and reboot remains manual.
+
 ## Source maintenance and checks
 
 ```sh

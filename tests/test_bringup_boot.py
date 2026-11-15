@@ -200,16 +200,17 @@ class FullBringupBootTests(LegacyHfpSetupBootTests):
     def validate(self):
         f = self.fixture
         return candidate.validate_running_kernel(f.root, candidate.BASELINE_RELEASE, f.identity, f.deployment,
-            {candidate.TOKEN: f.receipt["trial_id"], **candidate.FULL_PARAMETERS},
+            {candidate.TOKEN: f.receipt["trial_id"], **candidate.ANE_BOOT_PARAMETERS[self.VARIANT]},
             running_release=candidate.VARIANTS[self.VARIANT]["release"])
 
-    def test_full_bringup_refuses_unobserved_ane_startup(self):
+    def test_candidate_requires_its_authorized_ane_boot_policy(self):
         f = self.fixture
-        for value in (None, "0"):
+        expected = candidate.ANE_BOOT_PARAMETERS[self.VARIANT]["ane_t6021.ane_observe_only"]
+        for value in (None, "0" if expected == "1" else "1"):
             cmdline = {candidate.TOKEN: f.receipt["trial_id"]}
             if value is not None:
                 cmdline["ane_t6021.ane_observe_only"] = value
-            with self.assertRaisesRegex(RuntimeError, "observation-only"):
+            with self.assertRaises(RuntimeError):
                 candidate.validate_running_kernel(f.root, candidate.BASELINE_RELEASE, f.identity, f.deployment,
                     cmdline, running_release=candidate.VARIANTS[self.VARIANT]["release"])
 
@@ -223,6 +224,10 @@ class AneTypeObservationBootTests(FullBringupBootTests):
         f.store_receipt()
         with self.assertRaisesRegex(RuntimeError, "build pins"):
             self.verify()
+
+
+class AneStartupBootTests(AneTypeObservationBootTests):
+    VARIANT = "bringup-ane-start"
 
 
 class BringupPublicationTests(unittest.TestCase):

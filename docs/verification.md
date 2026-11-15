@@ -631,3 +631,17 @@ camera job is claimed.
   and preserved the tested full default/runtime, modules and baseline/rescue.
   No reboot, trial arming, ANE identity measurement or engine job occurred.
 
+## Live ANE observation and cross-build backend - 2026-11-15
+
+- Actual observation kernel boot and binding passed. Recognized reservations
+  and layout produced the exact admitted live TEXT hash 11557586...dc6066;
+  root readback showed observation Y, no accel node and engine left off.
+- Acquisition policy migration passed 92 consumer authorization cases; mode
+  0 is accepted only for the new separately bound startup variant. No observation
+  parameter write, module reload or engine stage action occurred.
+- Remote build host and SSH path were inspected read-only. Native x86-64 to
+  ARM64 worker and local finalizer passed three and 33 cases; four archive-return
+  cases passed before launching the 64-job remote acquisition build.
+- No private target DTB, firmware, raw ADT, capture samples or SSH keys uploaded.
+  No hardware deployment or execution proof inferred from remote compilation.
+

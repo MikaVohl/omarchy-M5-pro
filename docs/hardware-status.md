@@ -6,17 +6,17 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | `bringup-full` remains running with tested media paths | Exact-type `bringup-ane-observe` built, target-checked and selected for later manual boot; identity observation pending |
+| Kernel | `bringup-ane-observe` booted; boot binding passed | Guarded acquisition candidate preparing through native x86-64 to ARM64 cross-build; no acquisition yet |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
-| Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
+| Panel | Native DCP, full-notch 3456×2234; current observation boot at 60 Hz, 120 Hz offered | No display setting changed during observation; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | H.264 prior streaming pass; current HEVC Main hardware decode produced 30 frames bit-identical to software | Limited streams; Main10, AV1, VP9, higher resolutions and long soak unqualified |
-| Video encode / ANE | Current AVE H.264/HEVC Main hardware encode passed 30-frame software-decode and pixel comparison per codec | ANE refused missing type metadata before TEXT reading; correction remains observation-only; ProRes acquisition unqualified |
+| Video encode / ANE | AVE H.264/HEVC Main and AVD HEVC pixel passes; live ANE TEXT hash now matches admitted 26C5035r pin | ANE remains observation-only with no acquisition/job; cold-state/ownership gates still apply; ProRes acquisition unqualified |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
 | Audio | Protected preview starts automatically with grant; prior Mac speaker tone owner-confirmed | Current graph verification refused one startup speaker xrun; cause unresolved, counters/gates not relaxed; no new speaker playback |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
@@ -949,4 +949,39 @@ publication guard checks passed. The tested full kernel, module tree, runtime
 and baseline/rescue were preserved; no reboot or trial arming occurred.
 Observation-only mode remains mandatory. No ANE live TEXT digest, acquisition
 or job is claimed until the owner returns from a manual hardware boot.
+
+## Live ANE identity observation and acquisition preparation - 2026-11-15
+
+The owner booted `bringup-ane-observe`. Boot binding passed and no system
+services failed. The exact type cell allowed recognized no-map preload
+geometry to be read. The kernel measured live TEXT SHA256
+`115575864d4c8d02d48d83077170e7e16079aaf70dadd608c71910ac66dc6066`,
+exactly the admitted upstream pin. Root readback confirmed observation-only
+parameter Y, no accel node, and no staged backend/acquisition. The engine stayed
+off; retained-file SHA is not substituted. Speaker supervision remained active
+and granted. The panel was full-resolution at 60 Hz with 120 Hz available; no
+display or audio settings were changed.
+
+The owner authorized preparation of a separate `bringup-ane-start` candidate.
+Only that bound variant permits observation mode 0; full/observation variants
+retain mode 1. A single per-variant boot-policy map replaces obsolete aliases
+and every builder/runtime/test caller uses it. Existing live-pin, reservations,
+raw-loader, cold-PMGR, DART/ownership, staged-order and quarantine checks are
+unchanged. Observation is not overridden by unloading/reloading its module.
+
+The owner offered a dual-EPYC build host. Read-only checks found 192 physical
+cores, 384 threads, about 2.8 TiB available RAM and 211 GiB filesystem space;
+the host had other work, so the first job is limited to 64 jobs/CPUs. A 64 MiB
+uncompressed test through the jump host took 46 seconds (1.39 MiB/s including
+SSH authentication); the old 482 MiB module archive would take about six minutes
+on that path. A native x86-64 ARM64 LLVM/Rust build is launched; no ARM emulation.
+
+One shared worker serves local and remote builds. Public source/policy/patches/
+config are the only upload inputs. The build host fetches and caches the pinned
+kernel archive/toolchain, while target DT preservation and finalization stay
+local. Return envelopes, architecture, release, signatures and artifact hashes
+are validated before final metadata. Raw Image can be reconstructed from its
+validated gzip and checked against the original hash. Three worker, 33 finalizer,
+four return-envelope and 92 acquisition-policy cases passed. No remote hardware
+device, Mac firmware/ADT/capture, boot selection or ANE job was involved.
 
