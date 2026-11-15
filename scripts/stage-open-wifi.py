@@ -171,7 +171,7 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
         require(name in {"Image", "Image.gz", "t6050-j716s.dtb", ".config", "System.map", "Module.symvers", "kernel.release", "modules.tar.gz"}, "unexpected kernel artifact")
         check_regular(kernel / name)
         require(record(kernel / name) == {"size": item["bytes"], "sha256": item["sha256"]}, "candidate artifact differs: " + name)
-    baseline_artifacts = ((".config",) if variant == "sep-probe" else
+    baseline_artifacts = ((".config",) if variant in candidate_boot.ONE_SHOT_PARAMETERS else
                           ("t6050-j716s.dtb",) if variant == "bringup" else
                           (".config", "t6050-j716s.dtb"))
     for name in baseline_artifacts:
@@ -209,12 +209,12 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
     require(not any("j716s.candidate=" in line for line in lines), "baseline is already a candidate")
     trial_id = secrets.token_hex(32)
     extra = " j716s.candidate=" + trial_id
-    if variant == "sep-probe":
+    if variant in candidate_boot.ONE_SHOT_PARAMETERS:
         for line in lines:
             if line.startswith("chosen.bootargs="):
                 existing = {token.partition("=")[0] for token in line.split("=", 1)[1].split()}
-                require(not existing.intersection(candidate_boot.SEP_PROBE_PARAMETERS), "baseline already supplies SEP parameters")
-        extra += " " + " ".join(key + "=" + value for key, value in candidate_boot.SEP_PROBE_PARAMETERS.items())
+                require(not existing.intersection(candidate_boot.ONE_SHOT_PARAMETERS[variant]), "baseline already supplies SEP parameters")
+        extra += " " + " ".join(key + "=" + value for key, value in candidate_boot.ONE_SHOT_PARAMETERS[variant].items())
     lines = [line + extra if line.startswith("chosen.bootargs=") else line for line in lines]
     encoded = ("\n".join(lines) + "\n").encode("ascii")
     spec = importlib.util.spec_from_file_location("trial_payload", PROJECT / "work/aura-audit/compose-linux-rescue.py")
@@ -224,10 +224,11 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
     require(image[0x38:0x3c] == b"ARM\x64", "candidate is not an ARM64 Image")
     text_offset, image_size = struct.unpack_from("<QQ", image, 8)
     require(len(image) <= image_size and 0 < text_offset + image_size <= 128 * 1024**2, "candidate exceeds the enrolled kernel window")
-    dtb = kernel / "t6050-j716s.dtb" if variant == "sep-probe" else ESP / "aurora/root/t6050-j716s.dtb"
+    dtb = kernel / "t6050-j716s.dtb" if variant in candidate_boot.ONE_SHOT_PARAMETERS else ESP / "aurora/root/t6050-j716s.dtb"
+    initramfs_path = "aurora/root/initramfs.cpio.gz" if variant == "sep-sensor" else boot_prefix + "/initramfs.cpio.gz"
     files = [(boot_prefix + "/Image.gz", (kernel / "Image.gz").read_bytes()),
              (boot_prefix + "/t6050-j716s.dtb", dtb.read_bytes()),
-             (boot_prefix + "/initramfs.cpio.gz", (ESP / "aurora/root/initramfs.cpio.gz").read_bytes())]
+             (initramfs_path, (ESP / "aurora/root/initramfs.cpio.gz").read_bytes())]
     payload, _, inventory = helpers.boot_payload(bare, deployment["esp_partition_uuid"], files, encoded)
     if variant == "bringup":
         for name, source in ((".config", kernel / ".config"), ("baseline.config", baseline_config)):
@@ -240,7 +241,7 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
                "kernel_release": release, "baseline_identity_sha256": digest("/usr/share/j716s/image-identity.json"),
                "baseline_deployment_sha256": digest(ESP / "aurora/deployment.json"),
                "build_manifest": build, "files": inventory, "modules": modules}
-    return files + [(trial, payload)], receipt, module_dir
+    return [(name, data) for name, data in files if name != "aurora/root/initramfs.cpio.gz"] + [(trial, payload)], receipt, module_dir
 
 
 def stage(apply):

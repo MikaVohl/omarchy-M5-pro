@@ -31,6 +31,15 @@ SEP_PROBE_PARAMETERS = {
     "apple_sep.xart_guard": "2", "apple_sep.trusted_keys": "0",
     "apple_sep.filevault_api": "0", "apple_sep.keystore_only": "1",
 }
+SEP_SENSOR_RELEASE = BASELINE_RELEASE + "-sep-sensor"
+SEP_SENSOR_PARAMETERS = {**SEP_PROBE_PARAMETERS, "apple_sep.sensor_auth_probe": "1"}
+ONE_SHOT_PARAMETERS = {"sep-probe": SEP_PROBE_PARAMETERS, "sep-sensor": SEP_SENSOR_PARAMETERS}
+SENSOR_MATERIAL_PREFIX = "var/lib/j716s/sep-sensor-material"
+SENSOR_PROVENANCE = SENSOR_MATERIAL_PREFIX + "/sensor-firmware-provenance.json"
+SENSOR_FIRMWARE_NAMES = frozenset({"apple/mesacal-j716s.bin", "apple/msrk-j716s.bin"})
+SENSOR_MATERIAL_FILES = frozenset({SENSOR_PROVENANCE,
+    *(SENSOR_MATERIAL_PREFIX + "/" + name for name in SENSOR_FIRMWARE_NAMES),
+    *("usr/lib/firmware/" + name for name in SENSOR_FIRMWARE_NAMES)})
 BLUETOOTH_CONFIG = frozenset({"CONFIG_BT_BREDR", "CONFIG_BT_LE", "CONFIG_BT_RFCOMM",
                             "CONFIG_BT_BNEP", "CONFIG_INPUT_MISC", "CONFIG_INPUT_UINPUT"})
 CONFIG_DELTA = BLUETOOTH_CONFIG | {"CONFIG_BT_LE_L2CAP_ECRED"}
@@ -43,6 +52,10 @@ VARIANTS = {
     "sep-probe": {"release": SEP_PROBE_RELEASE, "patches": {
         "kernel-j716s-open-wifi.patch": PATCH_SHA256,
         "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256}},
+    "sep-sensor": {"release": SEP_SENSOR_RELEASE, "patches": {
+        "kernel-j716s-open-wifi.patch": PATCH_SHA256,
+        "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
+        "kernel-j716s-sep-sensor.patch": "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5"}},
 }
 
 
@@ -53,6 +66,9 @@ def variant_paths(variant):
              ("Image.gz", "t6050-j716s.dtb", "initramfs.cpio.gz"))}
     if variant == "bringup":
         files.update({prefix + "/.config", prefix + "/baseline.config"})
+    if variant == "sep-sensor":
+        files.remove(prefix + "/initramfs.cpio.gz")
+        files.add("aurora/root/initramfs.cpio.gz")
     return prefix, files
 
 
@@ -138,6 +154,32 @@ def verify_file(root, entry):
             "candidate file differs: " + entry["path"])
 
 
+def verify_sensor_material(root, binding):
+    require(isinstance(binding, dict) and set(binding) == {"provenance_sha256", "unit_serial_sha256", "files", "current_restore_build_verified"},
+            "unsupported sensor material binding")
+    require(binding["current_restore_build_verified"] is False,
+            "sensor material profile matching is not current restore-build certification")
+    require(sha256(binding["provenance_sha256"]) and sha256(binding["unit_serial_sha256"]), "invalid sensor material digest")
+    serial = (root / "sys/firmware/devicetree/base/serial-number").read_bytes().rstrip(b"\0")
+    require(serial and hashlib.sha256(serial).hexdigest() == binding["unit_serial_sha256"], "sensor material is from another unit")
+    files = inventory(binding["files"])
+    require(set(files) == SENSOR_MATERIAL_FILES, "sensor material inventory differs")
+    require(files[SENSOR_PROVENANCE]["sha256"] == binding["provenance_sha256"], "sensor provenance binding differs")
+    require(files["usr/lib/firmware/apple/msrk-j716s.bin"]["size"] <= 0x4b000,
+            "sensor signed-root material exceeds the pinned SBIO transaction limit")
+    for entry in files.values():
+        path = safe_path(root, entry["path"])
+        metadata = path.stat()
+        require(metadata.st_uid == 0 and metadata.st_mode & 0o022 == 0 and metadata.st_nlink == 1,
+                "sensor material must be root-owned, single-link and not writable by others")
+        require(entry["size"] > 0, "empty sensor material")
+        verify_file(root, entry)
+    for name in SENSOR_FIRMWARE_NAMES:
+        package, installed = files[SENSOR_MATERIAL_PREFIX + "/" + name], files["usr/lib/firmware/" + name]
+        require(package["size"] == installed["size"] and package["sha256"] == installed["sha256"],
+                "installed sensor firmware differs from admitted private package")
+
+
 def verify_candidate(root, baseline_release, identity, deployment, variant="open-wifi"):
     """Validate stored trial data without requiring a currently running trial.
 
@@ -153,9 +195,11 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
     require(metadata.st_uid == 0 and metadata.st_mode & 0o022 == 0,
             "candidate receipt must be root-owned and not group/world writable")
     receipt = json.loads(receipt_path.read_text())
-    require(isinstance(receipt, dict) and set(receipt) == {
-        "schema", "kind", "trial_id", "baseline_identity_sha256", "baseline_deployment_sha256",
-        "kernel_release", "build_manifest", "files", "modules"}, "unsupported candidate receipt fields")
+    fields = {"schema", "kind", "trial_id", "baseline_identity_sha256", "baseline_deployment_sha256",
+              "kernel_release", "build_manifest", "files", "modules"}
+    if variant == "sep-sensor":
+        fields.add("sensor_firmware")
+    require(isinstance(receipt, dict) and set(receipt) == fields, "unsupported candidate receipt fields")
     require(type(receipt["schema"]) is int and receipt["schema"] == 1
             and receipt["kind"] == "j716s-" + variant + "-trial", "unsupported candidate receipt")
     require(sha256(receipt["trial_id"]), "invalid candidate trial ID")
@@ -186,7 +230,7 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
         require(isinstance(artifact, dict) and set(artifact) == {"bytes", "sha256"}
                 and type(artifact["bytes"]) is int and artifact["bytes"] >= 0
                 and sha256(artifact["sha256"]), "invalid candidate build artifact")
-    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), "sep-probe": (".config",)}
+    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), **{name: (".config",) for name in ONE_SHOT_PARAMETERS}}
     for name in baseline_artifacts.get(variant, (".config", "t6050-j716s.dtb")):
         baseline = identity["kernel_artifacts"][name]
         require(artifacts[name]["sha256"] == baseline["sha256"]
@@ -201,8 +245,8 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
     for name in ("t6050-j716s.dtb", "initramfs.cpio.gz"):
         baseline = [entry for entry in dependencies if entry["path"] == "aurora/root/" + name]
         require(len(baseline) == 1, "baseline candidate dependency is missing or duplicated")
-        entry = files[prefix + "/" + name]
-        if variant == "sep-probe" and name == "t6050-j716s.dtb":
+        entry = files["aurora/root/" + name if variant == "sep-sensor" and name == "initramfs.cpio.gz" else prefix + "/" + name]
+        if variant in ONE_SHOT_PARAMETERS and name == "t6050-j716s.dtb":
             require(entry["sha256"] == artifacts[name]["sha256"]
                     and entry["size"] == artifacts[name]["bytes"],
                     "candidate DTB build binding differs")
@@ -211,6 +255,8 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
                 "candidate changed baseline boot dependency: " + name)
     for entry in files.values():
         verify_file(root / "boot", entry)
+    if variant == "sep-sensor":
+        verify_sensor_material(root, receipt["sensor_firmware"])
     modules = inventory(receipt["modules"])
     if variant == "bringup":
         for name, expected in ((".config", artifacts[".config"]),
@@ -243,7 +289,7 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
 
 def _validate_persistent_selection(root, deployment, receipt, selected_sha256=None):
     variant = receipt["build_manifest"]["variant"]
-    require(variant != "sep-probe", "SEP probe has no persistent authorization")
+    require(variant not in ONE_SHOT_PARAMETERS, "SEP trial has no persistent authorization")
     prefix, _ = variant_paths(variant)
     path = safe_path(root, "etc/j716s/" + variant + "-default.json")
     metadata = path.stat()
@@ -275,8 +321,8 @@ def _validate_persistent_selection(root, deployment, receipt, selected_sha256=No
 def validate_boot_selection(root, baseline_release, identity, deployment):
     """Authorize the selected baseline payload or the explicitly bound candidate."""
     root = Path(root).resolve()
-    require(not (root / "etc/j716s/sep-probe-default.json").exists(),
-            "SEP probe has no persistent authorization")
+    require(not any((root / ("etc/j716s/" + variant + "-default.json")).exists() for variant in ONE_SHOT_PARAMETERS),
+            "SEP trial has no persistent authorization")
     selected_sha256 = digest(safe_path(root, "boot/aurora/boot.bin"))
     if selected_sha256 == deployment["root_payload_sha256"]:
         return
@@ -305,17 +351,20 @@ def validate_running_kernel(root, baseline_release, identity, deployment, cmdlin
     matches = [variant for variant, pins in VARIANTS.items() if pins["release"] == running_release]
     require(len(matches) == 1, "running kernel is neither baseline nor an exact pinned candidate")
     variant = matches[0]
-    if variant == "sep-probe":
-        require(all(cmdline.get(key) == value for key, value in SEP_PROBE_PARAMETERS.items()),
-                "SEP probe requires safe discovery command-line flags")
+    if variant in ONE_SHOT_PARAMETERS:
+        require(all(cmdline.get(key) == value for key, value in ONE_SHOT_PARAMETERS[variant].items()),
+                "SEP trial requires safe command-line flags")
+    if variant == "sep-sensor":
+        require(not {"apple_sep.sensor_spi_mode", "apple_sep.sensor_test_fault"}.intersection(cmdline),
+                "sensor trial forbids SPI-mode overrides and fault injection")
     prefix, _ = variant_paths(variant)
     require(TOKEN in cmdline and sha256(cmdline[TOKEN]), "candidate command-line trial ID is missing")
     receipt = verify_candidate(root, baseline_release, identity, deployment, variant)
     require(receipt["trial_id"] == cmdline[TOKEN], "candidate receipt trial ID differs")
     root = Path(root).resolve()
-    if variant == "sep-probe":
-        require(not (root / "etc/j716s/sep-probe-default.json").exists(),
-                "SEP probe has no persistent authorization")
+    if variant in ONE_SHOT_PARAMETERS:
+        require(not (root / ("etc/j716s/" + variant + "-default.json")).exists(),
+                "SEP trial has no persistent authorization")
     trial = root / "sys/firmware/devicetree/base/chosen/aurora,trial"
     if not trial.exists():
         trial = root / "proc/device-tree/chosen/aurora,trial"
@@ -323,5 +372,5 @@ def validate_running_kernel(root, baseline_release, identity, deployment, cmdlin
         require(trial.read_bytes().strip(b"\0") == (prefix + ".bin").encode(),
                 "candidate does not match its one-shot trial")
     else:
-        require(variant != "sep-probe", "SEP probe requires a matching one-shot trial")
+        require(variant not in ONE_SHOT_PARAMETERS, "SEP trial requires a matching one-shot trial")
         _validate_persistent_selection(root, deployment, receipt)

@@ -1,0 +1,834 @@
+--- a/Documentation/ABI/testing/sysfs-driver-apple-sep
++++ b/Documentation/ABI/testing/sysfs-driver-apple-sep
+@@ -1,3 +1,42 @@
++What:		/sys/bus/platform/devices/<unit>.sep/diag/sensor_auth
++Date:		November 2026
++KernelVersion:	7.3
++Description:
++		(RO) One atomic cached snapshot of the opt-in J716s bounded
++		sensor identity/nonce/signed-root session. Reading sends no
++		traffic and cannot start, resume or repeat the attempt.
++		Format: stage=N errno=N sep_status=0xNNNNNNNN result=VALUE.
++		Results: disabled (no opt-in), running, stopped, or
++		session-accepted. errno is a negative Linux errno, or zero.
++		sep_status is the current request's sepOS status, or
++		0xffffffff when no status was received or the stage is host-
++		or sensor-side. A sepOS refusal, including 0x16 or a refusal
++		under read-only xART policy, stops without reset or retry.
++
++		Stages: 0 disabled; 1 input/state admission; 2 SPI bind;
++		3 one initial power-on; 4 idle identity read (expected 0x3356);
++		5 SBIO communication; 6 platform identity; 7 sensor identity;
++		8 serial read; 9 nonce read; 10 serial registration;
++		11 nonce submission; 12 signed-root submission;
++		13 session share request/send; 14 sensor share reply;
++		15 enclave session commit; 16 power-off; 17 session accepted
++		and sensor powered off. Stage 17 is NOT capture qualification,
++		enrolment, fingerprint matching or persistence verification.
++
++		The module parameter sensor_auth_probe is 0444, default 0;
++		only value 1 on J716s permits an attempt. Required policy:
++		xart_writes=0 provision_keybag=0 xart_guard=2 trusted_keys=0
++		filevault_api=0 keystore_only=1; no SPI mode override or
++		sensor_test_fault. complete_attach remains forbidden. Factory
++		FSC2 and MSRk comb containers must use the exact J716s DT
++		filenames, be generated from this Mac's private factory data,
++		and pass bounded canonical DER shape/type checks before any
++		sensor bind/power operation. Root container is at most 0x4b000
++		bytes (SBIO's pinned transaction limit). Host shape admission
++		does not verify a signature: sepOS must accept the root and
++		sensor's session reply. No patch or calibration is uploaded,
++		capture is never armed, and no biometric device is published.
++
+ What:		/sys/bus/platform/devices/<unit>.sep/diag/abi
+ Date:		October 2026
+ KernelVersion:	7.1
+@@ -31,6 +70,11 @@
+ 		Touch ID is activated by the first open of /dev/sep-bio, not
+ 		by the boot-time bring-up, so the sensor and touchid
+ 		attributes only move on once something has opened it.
++
++		Exception: the isolated J716s sensor-auth candidate can bind
++		the sensor during discovery with sensor_auth_probe=1. It never
++		publishes /dev/sep-bio or completes the deferred host attach.
++		The separate sensor_auth snapshot is the only session result.
+ 
+ 		This deployment uses the existing T8122 profile and v4
+ 		/dev/sep-bio interface. It does not add a new sensor protocol.
+--- a/arch/arm64/boot/dts/apple/t6050-j716s.dts
++++ b/arch/arm64/boot/dts/apple/t6050-j716s.dts
+@@ -390,10 +390,10 @@
+  * Pin 112 takes an SError when read (as on the J716c), so only the pins a node
+  * here names are exposed: 80 (PCIe port 0's PERST#), 106 and 107 (the speaker
+  * amps' interrupt and shutdown line), 134 and 139 (the jack codec's interrupt
+- * and reset).
++ * and reset), and 138 (Touch ID data ready; no capture is enabled).
+  */
+ &pinctrl_ap {
+-	gpio-reserved-ranges = <0 80>, <81 25>, <108 26>, <135 4>, <140 81>;
++	gpio-reserved-ranges = <0 80>, <81 25>, <108 26>, <135 3>, <140 81>;
+ };
+ 
+ /*
+@@ -522,6 +522,46 @@
+ 	status = "okay";
+ };
+ 
++/* Sensor-auth candidate only; the SEP module binds Mesa only with opt-in. */
++&ps_nub_gpio {
++	status = "okay";
++};
++
++&nub_gpio0 {
++	/* The AOP owns the other lines/interrupts: expose only the power GPIO. */
++	gpio-reserved-ranges = <0 21>, <22 39>;
++	/delete-property/ interrupt-controller;
++	/delete-property/ #interrupt-cells;
++	/delete-property/ interrupt-parent;
++	/delete-property/ interrupts;
++	status = "okay";
++};
++
++&ps_spi2 {
++	status = "okay";
++};
++
++&spi2 {
++	/* The pinned SPI clock inventory is not registered; retain clkref. */
++	clocks = <&clkref>;
++	status = "okay";
++
++	mesa: fingerprint@0 {
++		compatible = "apple,mesa-fingerprint";
++		reg = <0>;
++		spi-max-frequency = <8000000>;
++		/* Family mode 2, not a native J716s SPI mode trace. */
++		spi-cpol;
++		spi-cs-setup-delay-ns = <20>;
++		spi-cs-hold-delay-ns = <20>;
++		enable-gpios = <&nub_gpio0 21 GPIO_ACTIVE_HIGH>;
++		interrupt-parent = <&pinctrl_ap>;
++		interrupts = <138 IRQ_TYPE_EDGE_RISING>;
++		/* Private factory material from this exact Mac, never J700 fallback. */
++		firmware-name = "apple/mesacal-j716s.bin", "apple/msrk-j716s.bin";
++	};
++};
++
+ /*
+  * The ProRes engine (apr0) and its DART, in the SCODEC power state. Its
+  * parent fab7-soc also feeds the display pipeline, so it is left to the
+--- a/drivers/soc/apple/diag.rs
++++ b/drivers/soc/apple/diag.rs
+@@ -47,6 +47,7 @@
+     fn sep_diag_set_keybag(state: c_int);
+     fn sep_diag_sensor_bind() -> c_uint;
+     fn sep_diag_set_sensor_result(bind: c_uint, online: bool);
++    fn sep_diag_set_sensor_auth(stage: u8, error: c_int, status: u32);
+     fn sep_diag_set_bio_published();
+     fn sep_diag_set_touchid(started: bool);
+     fn sep_diag_set_sensor_attach(state: c_int);
+@@ -331,3 +332,9 @@
+     // shim only passes it to `dev_info()` and keeps no reference.
+     unsafe { sep_diag_log_summary(dev.as_raw().cast()) };
+ }
++
++/// A single cached snapshot; a sysfs read performs no sensor or SEP operation.
++pub(crate) fn sensor_auth(stage: u8, error: i32, status: u32) {
++    // SAFETY: no preconditions; the shim atomically replaces the snapshot.
++    unsafe { sep_diag_set_sensor_auth(stage, error, status) };
++}
+--- a/drivers/soc/apple/diag_shim.c
++++ b/drivers/soc/apple/diag_shim.c
+@@ -92,6 +92,8 @@
+ 	atomic_t restore;
+ 	atomic_t xart_refusals;
+ 	atomic_t matching;
++	/* Atomic stage/errno/sep-status snapshot, never sensor or identity data. */
++	atomic64_t sensor_auth;
+ 
+ 	/* Boot-time clock at probe, and at the attach and bring-up decisions. */
+ 	u64 probe_ns;
+@@ -564,6 +566,28 @@
+ 			  atomic_read(&sep_diag.sleeping) ? "held" : "awake");
+ }
+ static DEVICE_ATTR_RO(sleep);
++
++void sep_diag_set_sensor_auth(u8 stage, int error, u32 status)
++{
++	u64 snapshot = ((u64)status << 32) | ((u64)(u16)error << 16) | stage;
++
++	atomic64_set(&sep_diag.sensor_auth, snapshot);
++}
++
++static ssize_t sensor_auth_show(struct device *dev, struct device_attribute *attr,
++			       char *buf)
++{
++	u64 snapshot = atomic64_read(&sep_diag.sensor_auth);
++	unsigned int stage = snapshot & 0xff;
++	int error = (s16)(snapshot >> 16);
++	u32 status = stage ? snapshot >> 32 : ~0U;
++	const char *result = !stage ? "disabled" : error ? "stopped" :
++		stage == 17 ? "session-accepted" : "running";
++
++	return sysfs_emit(buf, "stage=%u errno=%d sep_status=0x%08x result=%s\n",
++			  stage, error, status, result);
++}
++static DEVICE_ATTR_RO(sensor_auth);
+ 
+ static struct attribute *sep_diag_attrs[] = {
+ 	&dev_attr_abi.attr,
+@@ -577,6 +601,7 @@
+ 	&dev_attr_keystore.attr,
+ 	&dev_attr_keybag.attr,
+ 	&dev_attr_sensor.attr,
++	&dev_attr_sensor_auth.attr,
+ 	&dev_attr_touchid.attr,
+ 	&dev_attr_sensor_attach.attr,
+ 	&dev_attr_restore.attr,
+--- a/drivers/soc/apple/sbio.rs
++++ b/drivers/soc/apple/sbio.rs
+@@ -563,6 +563,169 @@
+     fn refused_orphan(list: &[[u8; bio::UUID_LEN]], uuid: &[u8; bio::UUID_LEN], expected: Error) {
+         assert_eq!(admissible_orphan_target(list, uuid).unwrap_err().to_errno(),
+                    expected.to_errno());
++    }
++}
++
++static_assert!(sensor_auth::MAX_ROOT_TRANSFER == transfer::MAX_TRANSACTION as usize);
++
++/// A separate, one-shot path: no Touch ID activation, CLEAR_STATE, resumption,
++/// patch/calibration upload, template enumeration, capture or host-state restore.
++struct SensorAuthProbe<'a> {
++    sep: &'a SepData,
++    stage: u8,
++    status: u32,
++}
++
++impl SensorAuthProbe<'_> {
++    fn step(&mut self, stage: u8) -> Result<()> {
++        self.stage = stage;
++        self.status = u32::MAX;
++        diag::sensor_auth(stage, 0, self.status);
++        if self.sep.shutting_down.load(Relaxed) || self.sep.suspending.load(Relaxed)
++            || !self.sep.sleep_gate().may_request()
++            || self.sep.phase.load(Relaxed) != PHASE_EXCHANGE {
++            return Err(ESHUTDOWN);
++        }
++        Ok(())
++    }
++
++    fn request(&mut self, opcode: u16, name: &'static CStr, bytes: &[u8]) -> Result<KVec<u8>> {
++        if !sensor_auth::request_admitted(opcode, bytes) { return Err(EPERM); }
++        if self.sep.shutting_down.load(Relaxed) || self.sep.suspending.load(Relaxed)
++            || !self.sep.sleep_gate().may_request() { return Err(ESHUTDOWN); }
++        let done = self.sep.sbio_transfer_raw(opcode, name, bytes)?;
++        self.status = done.status.answered().unwrap_or(u32::MAX);
++        diag::sensor_auth(self.stage, 0, self.status);
++        if !done.status.is_ok() {
++            // In particular, 0x16 is a refusal here, never a resumed session.
++            // xART write-disabled refusals are retained; do not relax policy.
++            return Err(EPERM);
++        }
++        Ok(done.payload)
++    }
++}
++
++impl SepData {
++    pub(crate) fn run_sensor_auth_probe(&self) {
++        if self.sensor_auth_started.xchg(true, Relaxed) { return; }
++        let mut probe = SensorAuthProbe { sep: self, stage: 1, status: u32::MAX };
++        let mut registered = false;
++        let mut powered = false;
++        let mut communication = false;
++        let result = (|| -> Result<()> {
++            probe.step(1)?;
++            if !sensor_auth_policy(self.profile).admitted()
++                || !self.keystore_only.load(Relaxed) || self.keystore_user_bags
++                || self.host_store.lock().is_some() || self.identity_keybag.lock().is_some()
++                || self.bio_dev.lock().is_some() || self.rearm_dev.lock().is_some()
++                || self.store.lock().as_ref().map_or(true, |store| store.writes_enabled())
++                || self.touchid_started.load(Relaxed) || self.sensor_held.load(Relaxed)
++                || self.serial_unfinished.load(Relaxed) || self.sensor_key_loaded.load(Relaxed)
++                || self.bringup.load(Relaxed) != BRINGUP_FRESH || self.sbio_ready.load(Relaxed)
++                || sensor::is_bound() || !self.profile.nonce_session
++                || !self.endpoint_present(proto::EP_SBIO)
++                || self.profile.sensor.controller_base != 0x5_0510_8000
++                || self.profile.sensor.expected_id != 0x3356
++                || !sensor::auth_firmware_names_valid() {
++                return Err(EPERM);
++            }
++            // Admission happens before registering SPI or driving sensor power.
++            // Both files are private same-unit factory containers. Calibration
++            // is checked but NEVER uploaded by this non-enrolling probe.
++            let calibration = kernel::firmware::Firmware::request(c"apple/mesacal-j716s.bin", &self.dev)?;
++            let root = kernel::firmware::Firmware::request(c"apple/msrk-j716s.bin", &self.dev)?;
++            if !sensor_auth::container_admitted(calibration.data(), b"FSC2")
++                || !sensor_auth::container_admitted(root.data(), b"MSRk")
++                || root.data().len() > sensor_auth::MAX_ROOT_TRANSFER {
++                return Err(EINVAL);
++            }
++            drop(calibration);
++            let platform = Self::sensor_platform_identity()?;
++
++            probe.step(2)?;
++            sensor::register_driver()?;
++            registered = true;
++            if !sensor::is_bound() || sensor::power_source() != sensor::PowerSource::NodeProperty
++                || !sensor::cs_timing().is_hardware() { return Err(ENODEV); }
++            probe.step(3)?;
++            // One initial power-on, not power_cycle or a reset/retry loop.
++            powered = true;
++            if !sensor::power(true) { return Err(EIO); }
++            probe.step(4)?;
++            let status = sensor::status()?;
++            let id = status.identifier_to_register().ok_or(ENODEV)?;
++            if !sensor_auth::identity_admitted(id.value(), status.state == sensor::STATE_IDLE,
++                                              status.is_silent(), status.finger_present()) {
++                return Err(ENODEV);
++            }
++
++            probe.step(5)?;
++            self.register_ool(&self.ool_sbio)?;
++            self.sbio_ready.store(true, Relaxed);
++            communication = true;
++            probe.request(0x73, c"INIT_SBIO_COMMUNICATION", &6u32.to_le_bytes())?;
++            probe.step(6)?;
++            probe.request(0x48, c"PLATFORM_IDENTITY", &platform)?;
++            probe.step(7)?;
++            probe.request(OP_SBIO_REGISTER_SENSOR, c"REGISTER_SENSOR", &id.value().to_le_bytes())?;
++            probe.step(8)?;
++            let serial = sensor::auth_serial()?;
++            probe.step(9)?;
++            let mut nonce = sensor::auth_nonce()?;
++            let nonce_result = (|| {
++                probe.step(10)?;
++                probe.request(OP_SBIO_REGISTER_SERIAL, c"REGISTER_SERIAL", serial.bytes())?;
++                probe.step(11)?;
++                probe.request(0x81, c"SENSOR_NONCE", &nonce)
++            })();
++            image::wipe(&mut nonce);
++            nonce_result?;
++            probe.step(12)?;
++            // sepOS, not the host shape parser, must accept this signed root.
++            probe.request(0x86, c"SENSOR_ROOT_KEY", root.data())?;
++            probe.step(13)?;
++            let mut share = probe.request(OP_SBIO_SESSION_SHARE, c"SESSION_SHARE", &SBIO_SESSION_MODE.to_le_bytes())?;
++            // The pinned protocol reserves 0x30 bytes, of which 40 are the share.
++            if !(sensor::SESSION_SHARE_LEN..=0x30).contains(&share.len()) {
++                image::wipe(&mut share);
++                return Err(EPROTO);
++            }
++            let outgoing: &[u8; sensor::SESSION_SHARE_LEN] = share[..sensor::SESSION_SHARE_LEN]
++                .try_into().map_err(|_| EPROTO)?;
++            let sent = sensor::auth_session_share(outgoing);
++            image::wipe(&mut share);
++            sent?;
++            probe.step(14)?;
++            let mut reply = sensor::auth_session_reply()?;
++            let committed = (|| {
++                probe.step(15)?;
++                probe.request(OP_SBIO_COMMIT_SESSION, c"SESSION_COMMIT", &reply)
++            })();
++            image::wipe(&mut reply);
++            committed?;
++            probe.step(16)?;
++            Ok(())
++        })();
++        // Always unregister, even if the SPI device was deferred/unbound: there
++        // must be no late bind or another authentication after this attempt.
++        let off = !powered || sensor::power(false);
++        if registered { sensor::unregister_driver(); }
++        if communication { self.sbio_ready.store(false, Relaxed); }
++        let result = match result {
++            Ok(()) if !off => { probe.stage = 16; Err(EIO) },
++            other => other,
++        };
++        match result {
++            Ok(()) => {
++                diag::sensor_auth(17, 0, 0);
++                dev_info_ratelimited!(self.dev, "sensor_auth_probe: session accepted and sensor powered off; no capture, templates or persistence enabled\n");
++            }
++            Err(error) => {
++                diag::sensor_auth(probe.stage, error.to_errno(), probe.status);
++                dev_warn_ratelimited!(self.dev, "sensor_auth_probe: stopped at stage {}, errno {}, sep_status {:#010x}; no retry or policy bypass\n",
++                                      probe.stage, error.to_errno(), probe.status);
++            }
++        }
+     }
+ }
+ 
+--- a/drivers/soc/apple/sensor.rs
++++ b/drivers/soc/apple/sensor.rs
+@@ -10,6 +10,9 @@
+ use kernel::time::Delta;
+ 
+ extern "C" {
++    fn sep_sensor_auth_probe() -> c_uint;
++    fn sep_sensor_mode_overridden() -> bool;
++    fn sep_sensor_auth_firmware_names_valid() -> bool;
+     fn sep_sensor_register() -> c_int;
+     fn sep_sensor_unregister();
+     fn sep_sensor_bound() -> c_int;
+@@ -208,6 +211,21 @@
+     } else {
+         Ok(())
+     }
++}
++
++pub(crate) fn auth_probe() -> u32 {
++    // SAFETY: reads an immutable module parameter.
++    unsafe { sep_sensor_auth_probe() }
++}
++
++pub(crate) fn mode_overridden() -> bool {
++    // SAFETY: reads an immutable module parameter.
++    unsafe { sep_sensor_mode_overridden() }
++}
++
++pub(crate) fn auth_firmware_names_valid() -> bool {
++    // SAFETY: validates static DT strings without binding or touching hardware.
++    unsafe { sep_sensor_auth_firmware_names_valid() }
+ }
+ 
+ pub(crate) fn register_driver() -> Result<()> {
+@@ -665,6 +683,70 @@
+     pub(crate) fn bytes(&self) -> &[u8; SENSOR_SERIAL_LEN] {
+         &self.0
+     }
++}
++
++/// Auth probe only: readiness polling is bounded, frames are read exactly once.
++/// A stale/unexpected frame or CRC failure stops the attempt; never drain/retry.
++fn auth_read_frame(total: usize, out: &mut [u8]) -> Result<()> {
++    if !(SENSOR_SERIAL_AT + CRC_LEN..=MAX_REPLY).contains(&total)
++        || SENSOR_SERIAL_AT + out.len() != total - CRC_LEN {
++        return Err(EINVAL);
++    }
++    for _ in 0..READ_POLL_ATTEMPTS {
++        let st = status()?;
++        if st.is_silent() || st.finger_present() { return Err(EIO); }
++        match st.offset12() {
++            Offset12::Available(count) if count as usize == total => {
++                let mut buf = FrameBuf::new();
++                read_reply_ready(total, &mut buf.0)?;
++                if !frame_crc_valid(&buf.0[..total]) { return Err(EIO); }
++                out.copy_from_slice(&buf.0[SENSOR_SERIAL_AT..total - CRC_LEN]);
++                return Ok(());
++            }
++            Offset12::Identifier(_) => {},
++            _ => return Err(EIO),
++        }
++        fsleep(Delta::from_millis(READ_POLL_MS));
++    }
++    Err(ETIMEDOUT)
++}
++
++fn auth_command_ready() -> Result<()> {
++    let st = status()?;
++    if st.is_silent() || st.state != STATE_IDLE || st.finger_present() {
++        return Err(EBUSY);
++    }
++    Ok(())
++}
++
++pub(crate) fn auth_serial() -> Result<SensorSerial> {
++    auth_command_ready()?;
++    command(&CMD_GET_SENSOR_SERIAL)?;
++    let mut serial = [0; SENSOR_SERIAL_LEN];
++    auth_read_frame(SENSOR_SERIAL_REPLY_LEN, &mut serial)?;
++    if !crate::sensor_auth::nonempty_value(&serial) { return Err(EIO); }
++    Ok(SensorSerial(serial))
++}
++
++pub(crate) fn auth_nonce() -> Result<[u8; 32]> {
++    auth_command_ready()?;
++    command(&CMD_GET_NONCE)?;
++    let mut nonce = [0; 32];
++    auth_read_frame(SENSOR_SERIAL_AT + nonce.len() + CRC_LEN, &mut nonce)?;
++    if !crate::sensor_auth::nonempty_value(&nonce) { return Err(EIO); }
++    Ok(nonce)
++}
++
++pub(crate) fn auth_session_share(share: &[u8; SESSION_SHARE_LEN]) -> Result<()> {
++    auth_command_ready()?;
++    send_framed(TYPE_SESSION, share)
++}
++
++pub(crate) fn auth_session_reply() -> Result<[u8; SESSION_SHARE_LEN]> {
++    let mut reply = [0; SESSION_SHARE_LEN];
++    auth_read_frame(SESSION_REPLY_LEN, &mut reply)?;
++    if !crate::sensor_auth::nonempty_value(&reply) { return Err(EIO); }
++    Ok(reply)
+ }
+ 
+ pub(crate) fn read_sensor_serial() -> Result<SensorSerial> {
+--- /dev/null
++++ b/drivers/soc/apple/sensor_auth.rs
+@@ -0,0 +1,130 @@
++// SPDX-License-Identifier: GPL-2.0-only OR MIT
++//! J716s sensor-auth admission only; no transport, persistence or biometric API.
++
++pub(crate) const MAX_CONTAINER: usize = 16 * 1024 * 1024;
++pub(crate) const MAX_ROOT_TRANSFER: usize = 0x4b000;
++const MAX_IMAGE: usize = 4 * 1024 * 1024;
++
++pub(crate) struct Policy {
++    pub(crate) j716s: bool,
++    pub(crate) opt_in: u32,
++    pub(crate) xart_writes: u8,
++    pub(crate) provision_keybag: u8,
++    pub(crate) xart_guard: i8,
++    pub(crate) trusted_keys: u8,
++    pub(crate) filevault_api: u8,
++    pub(crate) discovery_only: bool,
++    pub(crate) spi_override: bool,
++    pub(crate) test_fault: u8,
++}
++
++impl Policy {
++    pub(crate) fn admitted(&self) -> bool {
++        self.j716s && self.opt_in == 1 && self.xart_writes == 0
++            && self.provision_keybag == 0 && self.xart_guard == 2
++            && self.trusted_keys == 0 && self.filevault_api == 0
++            && self.discovery_only && !self.spi_override && self.test_fault == 0
++    }
++}
++
++pub(crate) fn identity_admitted(id: u16, idle: bool, silent: bool, finger: bool) -> bool {
++    id == 0x3356 && idle && !silent && !finger
++}
++
++pub(crate) fn nonempty_value(bytes: &[u8]) -> bool {
++    !bytes.is_empty() && !bytes.iter().all(|b| *b == 0)
++        && !bytes.iter().all(|b| *b == 0xff)
++}
++
++/// Only the eight commands of the bounded session, with exact request geometry.
++pub(crate) fn request_admitted(opcode: u16, bytes: &[u8]) -> bool {
++    match opcode {
++        0x73 => bytes == 6u32.to_le_bytes(),
++        0x48 => bytes.len() == 12 && nonempty_value(bytes),
++        0x80 => bytes == 0x3356u16.to_le_bytes(),
++        0x17 => bytes.len() == 16 && nonempty_value(bytes),
++        0x81 => bytes.len() == 32 && nonempty_value(bytes),
++        0x86 => !bytes.is_empty() && bytes.len() <= MAX_ROOT_TRANSFER,
++        0x15 => bytes == 1u32.to_le_bytes(),
++        0x16 => bytes.len() == 40 && nonempty_value(bytes),
++        _ => false,
++    }
++}
++// Fixed-shape canonical DER parsing with borrowed slices, no recursion or allocation.
++
++fn take<'a>(bytes: &mut &'a [u8], tag: u8) -> Option<&'a [u8]> {
++    if bytes.first().copied()? != tag { return None; }
++    let first = *bytes.get(1)?;
++    let (len, header): (usize, usize) = if first < 0x80 {
++        (usize::from(first), 2)
++    } else {
++        let count = usize::from(first & 0x7f);
++        if count == 0 || count > 4 || *bytes.get(2)? == 0 { return None; }
++        let mut len = 0usize;
++        for b in bytes.get(2..2 + count)? {
++            len = len.checked_mul(256)?.checked_add(usize::from(*b))?;
++        }
++        if len < 128 { return None; }
++        (len, 2 + count)
++    };
++    let end = header.checked_add(len)?;
++    let body = bytes.get(header..end)?;
++    *bytes = bytes.get(end..)?;
++    Some(body)
++}
++
++fn named<'a>(bytes: &mut &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
++    let mut sequence = take(bytes, 0x30)?;
++    if take(&mut sequence, 0x16)? != name { return None; }
++    Some(sequence)
++}
++
++fn image_admitted(bytes: &[u8], kind: &[u8]) -> Option<()> {
++    if bytes.len() > MAX_IMAGE { return None; }
++    let mut outer = bytes;
++    let mut image = named(&mut outer, b"IMG4")?;
++    if !outer.is_empty() { return None; }
++    let mut payload = named(&mut image, b"IM4P")?;
++    if take(&mut payload, 0x16)? != kind { return None; }
++    let version = take(&mut payload, 0x16)?;
++    if !version.is_ascii() { return None; }
++    let data = take(&mut payload, 0x04)?;
++    if data.is_empty() || !payload.is_empty() { return None; }
++    // The pinned factory parser requires CALB in the first 256 FSC2 bytes.
++    if kind == b"FSC2" && !data[..data.len().min(256)].windows(4).any(|b| b == b"CALB") {
++        return None;
++    }
++    let mut wrapper = take(&mut image, 0xa0)?;
++    if !image.is_empty() { return None; }
++    let mut manifest = named(&mut wrapper, b"IM4M")?;
++    if !wrapper.is_empty() { return None; }
++    // Canonical non-negative version, signed property set, signature and certificates.
++    let version = take(&mut manifest, 0x02)?;
++    if version.is_empty() || version[0] & 0x80 != 0
++        || (version.len() > 1 && version[0] == 0 && version[1] & 0x80 == 0)
++        || take(&mut manifest, 0x31)?.is_empty()
++        || take(&mut manifest, 0x04)?.is_empty()
++        || take(&mut manifest, 0x30)?.is_empty()
++        || !manifest.is_empty() { return None; }
++    Some(())
++}
++
++/// Shape/type/size admission only, NOT signature verification or same-unit provenance.
++/// Those are required by the private factory extractor and ultimately by sepOS.
++pub(crate) fn container_admitted(bytes: &[u8], kind: &[u8]) -> bool {
++    fn check(bytes: &[u8], kind: &[u8]) -> Option<()> {
++        if bytes.is_empty() || bytes.len() > MAX_CONTAINER { return None; }
++        let mut outer = bytes;
++        let mut comb = named(&mut outer, b"comb")?;
++        if !outer.is_empty() { return None; }
++        let mut fdrd = named(&mut comb, b"fdrd")?;
++        image_admitted(take(&mut fdrd, 0x04)?, kind)?;
++        if !fdrd.is_empty() { return None; }
++        let mut secb = named(&mut comb, b"secb")?;
++        if take(&mut secb, 0x04)?.is_empty() || !secb.is_empty() || !comb.is_empty() {
++            return None;
++        }
++        Some(())
++    }
++    check(bytes, kind).is_some()
++}
+--- a/drivers/soc/apple/sensor_shim.c
++++ b/drivers/soc/apple/sensor_shim.c
+@@ -10,6 +10,7 @@
+ #include <linux/gpio/driver.h>
+ #include <linux/gpio/machine.h>
+ #include <linux/interrupt.h>
++#include <linux/irq.h>
+ #include <linux/mfd/macsmc.h>
+ #include <linux/of.h>
+ #include <linux/of_address.h>
+@@ -31,6 +32,92 @@
+ module_param_named(sensor_spi_mode, sep_sensor_mode, uint, 0444);
+ MODULE_PARM_DESC(sensor_spi_mode,
+ 		 "Diagnostic SPI mode override (0-3); default retains the board mode");
++
++/* C parameters are read once at module load, including kmod's boot options. */
++static unsigned int sensor_auth_probe;
++module_param(sensor_auth_probe, uint, 0444);
++MODULE_PARM_DESC(sensor_auth_probe,
++                 "J716s only: one non-enrolling sensor identity/nonce/signed-root session probe (0 off, 1 on)");
++
++unsigned int sep_sensor_auth_probe(void)
++{
++	return sensor_auth_probe;
++}
++
++bool sep_sensor_mode_overridden(void)
++{
++	return sep_sensor_mode != ~0U;
++}
++
++#define SEP_AUTH_SENSOR_NODE "/soc/spi@505108000/fingerprint@0"
++
++static bool sep_sensor_auth_node_is(struct device_node *np, const char *path)
++{
++	struct device_node *expected = of_find_node_by_path(path);
++	bool matches = np && np == expected;
++
++	of_node_put(expected);
++	return matches;
++}
++
++bool sep_sensor_auth_firmware_names_valid(void)
++{
++	struct device_node *np = of_find_node_by_path(SEP_AUTH_SENSOR_NODE);
++	const char *calibration, *root;
++	bool valid = false;
++
++	if (!np)
++		return false;
++	if (of_property_count_strings(np, "firmware-name") == 2 &&
++	    !of_property_read_string_index(np, "firmware-name", 0, &calibration) &&
++	    !of_property_read_string_index(np, "firmware-name", 1, &root))
++		valid = !strcmp(calibration, "apple/mesacal-j716s.bin") &&
++			!strcmp(root, "apple/msrk-j716s.bin");
++	of_node_put(np);
++	return valid;
++}
++
++/* Refuse incorrect wiring before spi_setup or acquiring/driving any GPIO. */
++static int sep_sensor_auth_wiring(struct spi_device *spi)
++{
++	struct device_node *np = spi->dev.of_node, *parent;
++	struct of_phandle_args power;
++	u32 timing, irq[2], npins;
++	bool valid;
++	int rc;
++
++	if (sensor_auth_probe != 1 || sep_sensor_mode != ~0U || !np ||
++	    !sep_sensor_auth_node_is(np, SEP_AUTH_SENSOR_NODE) ||
++	    spi_get_chipselect(spi, 0) != 0 || spi->mode != SPI_MODE_2 ||
++	    spi->max_speed_hz != SEP_SENSOR_HZ ||
++	    spi_get_csgpiod(spi, 0) ||
++	    !sep_sensor_auth_firmware_names_valid() ||
++	    of_property_read_u32(np, "spi-cs-setup-delay-ns", &timing) || timing != 20 ||
++	    of_property_read_u32(np, "spi-cs-hold-delay-ns", &timing) || timing != 20 ||
++	    of_property_count_u32_elems(np, "interrupts") != 2 ||
++	    of_property_read_u32_array(np, "interrupts", irq, 2) ||
++	    irq[0] != 138 || irq[1] != IRQ_TYPE_EDGE_RISING ||
++	    of_property_present(np, "apple,smc-power-key") ||
++	    of_property_present(np, "cs-gpios"))
++		return -EINVAL;
++	parent = of_parse_phandle(np, "interrupt-parent", 0);
++	if (!parent)
++		return -EINVAL;
++	valid = !of_property_read_u32(parent, "apple,npins", &npins) && npins == 221 &&
++		of_property_present(parent, "gpio-controller");
++	of_node_put(parent);
++	if (!valid)
++		return -EINVAL;
++	if (of_count_phandle_with_args(np, "enable-gpios", "#gpio-cells") != 1)
++		return -EINVAL;
++	rc = of_parse_phandle_with_args(np, "enable-gpios", "#gpio-cells", 0, &power);
++	if (rc)
++		return rc;
++	valid = power.args_count == 2 && power.args[0] == 21 && power.args[1] == 0 &&
++		sep_sensor_auth_node_is(power.np, "/soc/pinctrl@2881e4000");
++	of_node_put(power.np);
++	return valid ? 0 : -EINVAL;
++}
+ 
+ /* Chip-select setup and hold, in ns. */
+ #define SEP_SENSOR_CS_NS		20
+@@ -466,6 +553,11 @@
+ {
+ 	int rc;
+ 
++	if (of_machine_is_compatible("apple,j716s")) {
++		rc = sep_sensor_auth_wiring(spi);
++		if (rc)
++			return rc;
++	}
+ 	rc = sep_apply_cs_timing(spi);
+ 	if (rc)
+ 		return rc;
+--- a/drivers/soc/apple/sep.rs
++++ b/drivers/soc/apple/sep.rs
+@@ -35,6 +35,7 @@
+ mod sbio;
+ mod scrd;
+ mod sensor;
++mod sensor_auth;
+ mod shim;
+ mod shmem;
+ mod sks;
+@@ -759,6 +760,8 @@
+ 
+     bringup_started: Atomic<bool>,
+     touchid_started: Atomic<bool>,
++    // Exactly one non-enrolling sensor authentication attempt per attachment.
++    sensor_auth_started: Atomic<bool>,
+     touchid_failed: Atomic<bool>,
+ 
+     bringup: Atomic<u32>,
+@@ -1139,6 +1142,7 @@
+                 keybag_designated: Atomic::new(false),
+                 bringup_started: Atomic::new(false),
+                 touchid_started: Atomic::new(false),
++                sensor_auth_started: Atomic::new(false),
+                 touchid_failed: Atomic::new(false),
+                 enrol_open: Atomic::new(false),
+                 xart_refusal_logged: Atomic::new(false),
+@@ -2869,6 +2873,9 @@
+         if this.keystore_only.load(Relaxed) {
+             this.run_keystore_bringup();
+             diag::keystore_ended();
++            if sensor::auth_probe() == 1 {
++                this.run_sensor_auth_probe();
++            }
+         } else {
+             this.run_bringup();
+             diag::bringup_ended();
+@@ -3494,6 +3501,21 @@
+     _driver: driver::Registration<platform::Adapter<SepDriver>>,
+ }
+ 
++fn sensor_auth_policy(p: &profile::PlatformProfile) -> sensor_auth::Policy {
++    sensor_auth::Policy {
++        j716s: p.name == profile::T6050_J716S_PROBE.name,
++        opt_in: sensor::auth_probe(),
++        xart_writes: module_parameters::xart_writes.value(),
++        provision_keybag: module_parameters::provision_keybag.value(),
++        xart_guard: module_parameters::xart_guard.value(),
++        trusted_keys: module_parameters::trusted_keys.value(),
++        filevault_api: module_parameters::filevault_api.value(),
++        discovery_only: attach::discovery_only_requested(),
++        spi_override: sensor::mode_overridden(),
++        test_fault: module_parameters::sensor_test_fault.value(),
++    }
++}
++
+ impl kernel::InPlaceModule for SepModule {
+     fn init(module: &'static ThisModule) -> impl PinInit<Self, Error> {
+         try_pin_init!(Self {
+@@ -3503,6 +3525,11 @@
+             _dt: {
+                 match profile::detect() {
+                     Ok(p) => {
++                        let opt_in = sensor::auth_probe();
++                        if opt_in > 1 || (opt_in != 0 && !sensor_auth_policy(p).admitted()) {
++                            pr_err!("sensor_auth_probe requires J716s, the discovery-only safety policy, native board SPI mode and no sensor_test_fault; refusing before DT/DMA/mailbox changes\n");
++                            return Err(EINVAL);
++                        }
+                         if p.name == profile::T6050_J716S_PROBE.name {
+                             if module_parameters::xart_writes.value() != 0
+                                 || module_parameters::provision_keybag.value() != 0
+@@ -3514,7 +3541,11 @@
+                                 pr_err!("J716s discovery-only requires xart_writes=0 provision_keybag=0 trusted_keys=0 filevault_api=0 keystore_only=1 xart_guard=2; refusing before DT/DMA/mailbox changes\n");
+                                 return Err(EINVAL);
+                             }
+-                            pr_info!("J716s SEP safety mode: discovery-only, capacity 0x1c000, xART writes/provisioning/trusted keys/FileVault/sensor/persistence disabled, guard 2; complete_attach forbidden\n");
++                            if opt_in == 1 {
++                                pr_info!("J716s SEP safety mode: bounded sensor identity/authentication only, capacity 0x1c000, writes/provisioning/trusted keys/FileVault/capture/templates/persistence disabled, guard 2; complete_attach forbidden\n");
++                            } else {
++                                pr_info!("J716s SEP safety mode: discovery-only, capacity 0x1c000, xART writes/provisioning/trusted keys/FileVault/sensor/persistence disabled, guard 2; complete_attach forbidden\n");
++                            }
+                         }
+                         if matches!(p.bootstrap, profile::Bootstrap::WarmRegister) {
+                             dt::enable_sep_and_dart(p.dart_window)?;
+@@ -3523,9 +3554,12 @@
+                     // Without this the module loads, probes nothing and logs
+                     // nothing on an unlisted SoC, which is indistinguishable
+                     // from a driver that started correctly.
+-                    Err(_) => pr_info_ratelimited!(
+-                        "no platform profile for this SoC; the SEP stays disabled\n"
+-                    ),
++                    Err(_) => {
++                        if sensor::auth_probe() != 0 {
++                            return Err(EINVAL);
++                        }
++                        pr_info_ratelimited!("no platform profile for this SoC; the SEP stays disabled\n");
++                    },
+                 }
+             },
+ 
+--- a/drivers/soc/apple/shim.h
++++ b/drivers/soc/apple/shim.h
+@@ -208,6 +208,7 @@
+ void sep_diag_set_sensor_bound(bool bound);
+ unsigned int sep_diag_sensor_bind(void);
+ void sep_diag_set_sensor_result(unsigned int bind, bool online);
++void sep_diag_set_sensor_auth(u8 stage, int error, u32 status);
+ void sep_diag_set_bio_published(void);
+ void sep_diag_set_touchid(bool started);
+ void sep_diag_set_sensor_attach(int state);
+@@ -223,6 +224,11 @@
+ unsigned int sep_diag_unhandled(void);
+ void sep_diag_sleep(bool entering);
+ void sep_diag_log_summary(struct device *dev);
++
++/* Read-only sensor-auth opt-in, owned by sensor_shim.c. */
++unsigned int sep_sensor_auth_probe(void);
++bool sep_sensor_mode_overridden(void);
++bool sep_sensor_auth_firmware_names_valid(void);
+ 
+ /* -- bio_shim.c --------------------------------------------------------- */
+ 

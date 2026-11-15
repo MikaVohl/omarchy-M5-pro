@@ -29,6 +29,7 @@ outputs/kernel-candidate/
 outputs/kernel-open-wifi-candidate/
 outputs/kernel-bringup-candidate/
 outputs/kernel-sep-probe-candidate/
+outputs/kernel-sep-sensor-candidate/
 outputs/rootfs/
 outputs/firmware/
 outputs/boot-candidate/loader/
