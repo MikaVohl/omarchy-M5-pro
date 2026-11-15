@@ -149,10 +149,10 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then image=docker.io/library
 docker run --name {container} --platform linux/amd64 --cpus={args.jobs} \\
   -v "$root/input:/exchange:ro" -v "$root/out:/candidate" \\
   -v "$cache/src:/src" -v "$cache/build:/build" -v "$cache/module-stage:/module-stage" \\
-  -e ROOT=/exchange -e OUT=/candidate -e SRC=/src/kernel -e BUILD=/build/kernel -e MODULE_STAGE=/module-stage \\
+  -e ROOT=/exchange -e OUT=/candidate -e SRC=/src/kernel-cross-v2 -e BUILD=/build/kernel -e MODULE_STAGE=/module-stage \\
   -e CONFIG=outputs/kernel-bringup-candidate/.config -e CONFIG_SHA256={CONFIG_SHA} \\
   -e PATCHES={shlex.quote(patch_names)} -e PROBE_VARIANT={shlex.quote(args.variant)} \\
-  -e JOBS={args.jobs} -e BUILD_HOST_ARCH=x86_64 "$image" bash /exchange/scripts/kernel-build-worker.sh
+  -e JOBS={args.jobs} -e BUILD_HOST_ARCH=x86_64 -e SYSROOT_RPMS=/opt/arm64-rpms "$image" bash /exchange/scripts/kernel-build-worker.sh
 docker commit {container} j716s-kernel-llvm21-rust199-x86_64 >/dev/null
 docker rm {container} >/dev/null
 tar -czf "$root/return.tar.gz" -C "$root/out" Image.gz t6050-j716s.dtb .config System.map Module.symvers kernel.release modules.tar.gz compile-receipt.json

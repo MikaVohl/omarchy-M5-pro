@@ -975,6 +975,15 @@ publishing final manifests. Full debug modules are retained for the first
 benchmark; do not strip already signed modules. Selection remains an explicit
 owner-authorized step and reboot remains manual.
 
+Cross builds also require a real ARM64 userspace sysroot for Kconfig's
+`CC_CAN_LINK` probe. The worker validates signed Fedora ARM64 RPM identities
+and hashes, stages the sysroot, and binds exact user compiler/linker flags
+into the compile receipt. It never forces the capability bit or accepts a
+different kernel config. Native builds record a null target sysroot. Cached
+source ownership uses its own source signature; old nonempty caches without
+that marker are refused rather than relabelled. Build/module caches remain
+bound to the full input signature.
+
 ## Source maintenance and checks
 
 ```sh

@@ -645,3 +645,19 @@ camera job is claimed.
 - No private target DTB, firmware, raw ADT, capture samples or SSH keys uploaded.
   No hardware deployment or execution proof inferred from remote compilation.
 
+- The first cross-build attempt stopped before Image/modules compilation:
+  only CONFIG_CC_CAN_LINK disappeared because the target userspace probe found
+  host x86 libc headers. No config bit was forced or difference ignored.
+- A real ARM64 sysroot from signature-verified Fedora RPMs linked the actual
+  stdio programme as AArch64 without executing it. The corrected worker binds
+  sysroot package identities/hashes and exact user compiler/linker flags into
+  the receipt and input signature; native builds require null sysroot.
+- Five worker and 42 finalizer cases passed for the corrected schema. Source
+  caches now bind archive/patches/host toolchain independently of variant and
+  config, while build/module caches retain the full binding. The old source
+  cache was preserved and not relabelled; the corrected job uses a fresh leaf.
+- Compiler setup and signed RPM downloads were retained; only the experimental
+  unowned sysroot inside our builder image was removed before worker-owned
+  staged extraction. The corrected cross-build job was launched; no hardware
+  operation or deployment occurred.
+

@@ -71,11 +71,49 @@ def unique_object(pairs):
     return result
 
 
+def validate_target_sysroot(value, builder_arch):
+    if builder_arch == "aarch64":
+        require(value is None, "native builder must not use a target sysroot")
+        return
+    flags = "--sysroot=/opt/arm64-sysroot --gcc-toolchain=/opt/arm64-sysroot/usr -fuse-ld=lld"
+    keys = {"path", "distribution", "version", "arch", "packages", "usercflags", "userldflags", "signed_rpms"}
+    require(isinstance(value, dict) and set(value) == keys, "target sysroot schema differs")
+    require(value["path"] == "/opt/arm64-sysroot" and value["distribution"] == "Fedora"
+            and value["version"] == "43" and value["arch"] == "aarch64",
+            "target sysroot identity/architecture differs")
+    require(value["usercflags"] == flags and value["userldflags"] == flags,
+            "target sysroot compiler flags differ")
+    require(value["signed_rpms"] is True, "target sysroot RPM signatures are unverified")
+    packages = value["packages"]
+    require(isinstance(packages, list) and packages, "target sysroot package inventory is missing")
+    identities = []
+    for package in packages:
+        require(isinstance(package, dict)
+                and set(package) == {"name", "epoch", "version", "release", "arch", "sha256", "bytes", "signature_verified"},
+                "target sysroot package identity is missing or invalid")
+        require(isinstance(package["name"], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+_.-]*", package["name"]),
+                "target sysroot package name is invalid")
+        require(isinstance(package["arch"], str) and package["arch"] in {"aarch64", "noarch"},
+                "target sysroot package architecture differs")
+        identity = (package["name"], package["arch"])
+        require(identity not in identities, "target sysroot package identity is duplicated")
+        identities.append(identity)
+        require(type(package["epoch"]) is int and package["epoch"] >= 0,
+                "target sysroot package epoch identity differs")
+        require(all(isinstance(package[key], str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+~^-]*", package[key])
+                    for key in ("version", "release")), "target sysroot package version/release identity differs")
+        validate_record({"sha256": package["sha256"], "bytes": package["bytes"]}, "target sysroot RPM")
+        require(package["signature_verified"] is True, "target sysroot package signature is unverified")
+    require(identities == sorted(identities), "target sysroot package identity order differs")
+    require({("gcc", "aarch64"), ("glibc-devel", "aarch64"), ("libgcc", "aarch64")} <= set(identities),
+            "target sysroot required AArch64 package identity is missing")
+
+
 def validate_receipt(receipt, variant, builder_arch, candidate):
     expected_keys = {"schema", "commit", "variant", "qualification", "kernel_release",
                      "artifacts", "patches", "ordered_patches", "archive_sha256",
                      "baseline_config_sha256", "config", "host", "target", "toolchain",
-                     "worker_sha256", "input_signature", "signing", "build_identity"}
+                     "worker_sha256", "input_signature", "signing", "build_identity", "target_sysroot"}
     require(isinstance(receipt, dict) and set(receipt) == expected_keys
             and type(receipt["schema"]) is int and receipt["schema"] == 1,
             "compile receipt schema differs")
@@ -101,6 +139,7 @@ def validate_receipt(receipt, variant, builder_arch, candidate):
             and receipt["target"] == {"arch": "arm64"}
             and receipt["toolchain"] == {"clang": "21.1.8", "rust": "1.99.1"},
             "compile host/target/toolchain differs")
+    validate_target_sysroot(receipt["target_sysroot"], builder_arch)
     require(receipt["build_identity"] == BUILD_IDENTITY
             and type(receipt["build_identity"]["version"]) is int, "compile build identity differs")
     require(receipt["worker_sha256"] == record(ROOT / "scripts/kernel-build-worker.sh")["sha256"],
@@ -120,7 +159,7 @@ def validate_receipt(receipt, variant, builder_arch, candidate):
     validate_record(signing["certificate"], "signing certificate")
     binding = {key: receipt[key] for key in (
         "commit", "variant", "kernel_release", "archive_sha256", "config",
-        "baseline_config_sha256", "ordered_patches", "worker_sha256", "host", "target", "toolchain")}
+        "baseline_config_sha256", "ordered_patches", "worker_sha256", "host", "target", "toolchain", "target_sysroot")}
     signature = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     require(receipt["input_signature"] == signature, "compile input signature differs")
     return pins
@@ -305,6 +344,7 @@ def finalize(variant, output, baseline_dtb, worker_receipt, builder_arch):
                       "finalizer_sha256": finalizer_sha256,
                       "compile_receipt": receipt_record, "input_signature": receipt["input_signature"],
                       "host": receipt["host"], "target": receipt["target"],
+                      "target_sysroot": receipt["target_sysroot"],
                       "toolchain": {"guest": "Fedora 43 " + builder_arch, **receipt["toolchain"]},
                       "build_identity": receipt["build_identity"], "signing": receipt["signing"],
                       "modules": modules, "dtb_transform": transform, "safety": safety_policy(variant, candidate)}

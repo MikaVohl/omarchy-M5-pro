@@ -39,6 +39,42 @@ class KernelWorkerTests(unittest.TestCase):
         return subprocess.run([sys.executable, "-B", "-c", consumer(marker)],
                               env=env, capture_output=True, text=True)
 
+    def test_real_source_signature_reuses_only_identical_public_tree_and_toolchain(self):
+        binding = {"commit": "public-commit", "archive_sha256": "1" * 64,
+                   "ordered_patches": [{"name": "first.patch", "sha256": "2" * 64},
+                                       {"name": "second.patch", "sha256": "3" * 64}],
+                   "host": {"arch": "x86_64", "distribution": "Fedora", "version": "43"},
+                   "target": {"arch": "arm64"}, "toolchain": {"clang": "21.1.8", "rust": "1.99.1"}}
+        marker = "source = {name: binding[name]"
+        baseline = self.run_consumer(marker, WORKER_BINDING=json.dumps(binding))
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        expected = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual(baseline.stdout.strip(), expected)
+        metadata = {**binding, "variant": "changed", "config": "changed", "baseline_config_sha256": "4" * 64,
+                    "worker_sha256": "5" * 64, "target_sysroot": {"metadata": "changed"}, "input_signature": "6" * 64}
+        result = self.run_consumer(marker, WORKER_BINDING=json.dumps(metadata))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, baseline.stdout)
+        for change in ({"ordered_patches": list(reversed(binding["ordered_patches"]))},
+                       {"archive_sha256": "7" * 64}, {"host": {"arch": "aarch64"}},
+                       {"toolchain": {"clang": "different"}}):
+            with self.subTest(change=change):
+                result = self.run_consumer(marker, WORKER_BINDING=json.dumps({**binding, **change}))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotEqual(result.stdout, baseline.stdout)
+
+    def test_real_native_sysroot_consumer_binds_explicit_null(self):
+        binding = {"host": {"arch": "aarch64"}, "worker_sha256": "1" * 64}
+        result = self.run_consumer("sysroot = None", WORKER_BINDING=json.dumps(binding))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        signature, receipt = result.stdout.splitlines()
+        receipt = json.loads(receipt)
+        self.assertIsNone(receipt["target_sysroot"])
+        expected = hashlib.sha256(json.dumps({**binding, "target_sysroot": None}, sort_keys=True,
+                                            separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual(signature, expected)
+        self.assertEqual(receipt["input_signature"], expected)
+
     def test_real_image_consumer_rejects_wrong_architecture_and_truncation(self):
         image = self.build / "arch/arm64/boot/Image"
         image.parent.mkdir(parents=True)

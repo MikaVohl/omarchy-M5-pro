@@ -7,6 +7,8 @@
 - Separate authorized acquisition boot policy from observation and migrate every caller; retain cold-state, ownership, stage-order and quarantine gates.
 - Share a pinned native-build/cross-build worker and locally validate returned architecture, release, signed modules, hashes and target DT preservation.
 - Launch a measured, 64-job EPYC cross-build with public inputs only; retain target data and deployment on the Mac.
+- Fix the cross userspace-link prerequisite with a real signed ARM64 sysroot and bound package/flag provenance, preserving byte-identical kernel config checks.
+- Separate public source-cache identity from build metadata and refuse legacy unowned caches; preserve completed toolchain setup for the corrected run.
 
 ## Hardware video encoding and HEVC decoding - 2026-11-15
 

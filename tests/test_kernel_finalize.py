@@ -57,6 +57,21 @@ def module_bytes(machine=183, release=RELEASE, signed=True):
     return module
 
 
+def cross_sysroot():
+    flags = "--sysroot=/opt/arm64-sysroot --gcc-toolchain=/opt/arm64-sysroot/usr -fuse-ld=lld"
+    packages = []
+    for name, version, release, arch in (("gcc", "15.2.1", "3.fc43", "aarch64"),
+                                         ("glibc-devel", "2.42", "4.fc43", "aarch64"),
+                                         ("libgcc", "15.2.1", "3.fc43", "aarch64"),
+                                         ("tzdata", "2026b", "1.fc42", "noarch")):
+        packages.append({"name": name, "epoch": 0, "version": version, "release": release,
+                         "arch": arch, **byte_record((name + " signed RPM fixture").encode()),
+                         "signature_verified": True})
+    return {"path": "/opt/arm64-sysroot", "distribution": "Fedora", "version": "43",
+            "arch": "aarch64", "packages": packages, "usercflags": flags,
+            "userldflags": flags, "signed_rpms": True}
+
+
 class FinalizerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="kernel-finalizer-test-")
@@ -92,6 +107,7 @@ class FinalizerTests(unittest.TestCase):
             "config": "outputs/kernel-bringup-candidate/.config",
             "host": {"arch": "x86_64", "distribution": "Fedora", "version": "43"},
             "target": {"arch": "arm64"}, "toolchain": {"clang": "21.1.8", "rust": "1.99.1"},
+            "target_sysroot": cross_sysroot(),
             "worker_sha256": byte_record((ROOT / "scripts/kernel-build-worker.sh").read_bytes())["sha256"],
             "signing": {"private_key_exported": False, "certificate": byte_record(b"generated certificate")},
             "build_identity": {"user": "codex", "host": "j716s-kernel-build",
@@ -121,7 +137,7 @@ class FinalizerTests(unittest.TestCase):
 
     def bind_inputs(self):
         keys = ("commit", "variant", "kernel_release", "archive_sha256", "config",
-                "baseline_config_sha256", "ordered_patches", "worker_sha256", "host", "target", "toolchain")
+                "baseline_config_sha256", "ordered_patches", "worker_sha256", "host", "target", "toolchain", "target_sysroot")
         binding = {key: self.receipt[key] for key in keys}
         self.receipt["input_signature"] = hashlib.sha256(
             json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -170,6 +186,7 @@ class FinalizerTests(unittest.TestCase):
         self.assertEqual(provenance["target"], {"arch": "arm64"})
         self.assertEqual(provenance["toolchain"]["guest"], "Fedora 43 x86_64")
         self.assertEqual(provenance["toolchain"]["clang"], "21.1.8")
+        self.assertEqual(provenance["target_sysroot"], self.receipt["target_sysroot"])
         self.assertEqual(provenance["compile_receipt"], byte_record(self.receipt_path.read_bytes()))
         self.assertEqual(provenance["signing"], self.receipt["signing"])
         self.assertEqual(provenance["modules"]["kernel/test.ko"]["sha256"], byte_record(self.module_payload)["sha256"])
@@ -205,6 +222,7 @@ class FinalizerTests(unittest.TestCase):
                          "requires prepared public Aura libfdt source and native gcc")
     def test_native_build_with_raw_image_preserves_original_image(self):
         self.receipt["host"]["arch"] = "aarch64"
+        self.receipt["target_sysroot"] = None
         self.bind_inputs()
         (self.output / "Image").write_bytes(image_bytes())
         result = self.invoke("aarch64")
@@ -212,6 +230,7 @@ class FinalizerTests(unittest.TestCase):
         self.assertEqual((self.output / "Image").read_bytes(), image_bytes())
         provenance = json.loads((self.output / "build-provenance.json").read_text())
         self.assertEqual(provenance["toolchain"]["guest"], "Fedora 43 aarch64")
+        self.assertIsNone(provenance["target_sysroot"])
 
     def test_wrong_builder_architecture_refuses(self):
         self.refuses("host/target/toolchain", arch="aarch64")
@@ -220,6 +239,60 @@ class FinalizerTests(unittest.TestCase):
         self.receipt["target"]["arch"] = "x86_64"
         self.bind_inputs()
         self.refuses("host/target/toolchain")
+
+    def test_cross_sysroot_architecture_refuses(self):
+        self.receipt["target_sysroot"]["arch"] = "x86_64"
+        self.bind_inputs()
+        self.refuses("target sysroot identity/architecture differs")
+
+    def test_cross_sysroot_package_architecture_refuses(self):
+        self.receipt["target_sysroot"]["packages"][0]["arch"] = "x86_64"
+        self.bind_inputs()
+        self.refuses("target sysroot package architecture differs")
+
+    def test_cross_sysroot_unsafe_compiler_and_linker_flags_refuse(self):
+        for key in ("usercflags", "userldflags"):
+            with self.subTest(key=key):
+                original = self.receipt["target_sysroot"][key]
+                self.receipt["target_sysroot"][key] += " -include /tmp/unsafe.h"
+                self.bind_inputs()
+                self.refuses("target sysroot compiler flags differ")
+                self.receipt["target_sysroot"][key] = original
+                self.bind_inputs()
+
+    def test_cross_sysroot_missing_package_identity_refuses(self):
+        del self.receipt["target_sysroot"]["packages"][0]["version"]
+        self.bind_inputs()
+        self.refuses("target sysroot package identity is missing or invalid")
+
+    def test_cross_sysroot_missing_required_aarch64_package_refuses(self):
+        self.receipt["target_sysroot"]["packages"].pop(0)
+        self.bind_inputs()
+        self.refuses("required AArch64 package identity is missing")
+
+    def test_cross_sysroot_unsigned_rpm_and_invalid_epoch_refuse(self):
+        package = self.receipt["target_sysroot"]["packages"][0]
+        package["signature_verified"] = False
+        self.bind_inputs()
+        self.refuses("target sysroot package signature is unverified")
+        package["signature_verified"] = True
+        package["epoch"] = True
+        self.bind_inputs()
+        self.refuses("target sysroot package epoch identity differs")
+
+    def test_cross_builder_missing_sysroot_refuses(self):
+        self.receipt["target_sysroot"] = None
+        self.bind_inputs()
+        self.refuses("target sysroot schema differs")
+
+    def test_native_builder_must_not_use_cross_sysroot(self):
+        self.receipt["host"]["arch"] = "aarch64"
+        self.bind_inputs()
+        self.refuses("native builder must not use a target sysroot", arch="aarch64")
+
+    def test_target_sysroot_is_bound_into_input_signature(self):
+        self.receipt["target_sysroot"]["packages"][0]["sha256"] = "0" * 64
+        self.refuses("compile input signature differs")
 
     def test_wrong_module_architecture_refuses_before_dtb_transform(self):
         self.write_archive(module=module_bytes(machine=62))
