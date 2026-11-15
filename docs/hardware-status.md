@@ -321,6 +321,10 @@ the prepared same-unit material was installed. Which material the session used
 is not separately observed. The sensor patch upload,
 calibration, enrollment, matching, PAM integration and any persistence remain
 unimplemented and unqualified. Private evidence is under
-`/var/lib/j716s/sep-sensor/<boot-id>/`. A macOS Touch ID check after this trial
-is still required.
+`/var/lib/j716s/sep-sensor/<boot-id>/`.
+
+After the trial the owner booted macOS and reported Touch ID unlock and matching
+working normally. The next Linux start returned to the bringup default with the
+marker spent and boot-guard checks passing. This is one owner-observed return,
+not an independent enclave-state audit.
 
