@@ -6,6 +6,7 @@
 - Add same-unit factory material preparation that refuses without forwarded local-policy bytes and records only a pinned label/mBoot profile match, not restore-build verification.
 - Stage `sep-sensor` with an exact DT-delta check (pinned SPI2/GPIO wiring plus path-matched phandle renumbering) and receipt-bound factory material with full rollback.
 - Add a guarded `--update-validator` mode; the installed trial validator now matches the repository and still admits the staged discovery candidate.
+- Observe one enclave-accepted J716s sensor authentication session on the attended `sep-sensor` trial; enrollment and matching remain unimplemented.
 
 ## Discovery-only Touch ID research candidate — 2026-11-14
 

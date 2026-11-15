@@ -22,7 +22,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Not qualified | No claim of support |
-| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms. Same-unit sensor material prepared; sensor-auth candidate staged, not yet booted | No sensor authentication observed; no enrollment, matching or persistent biometric support |
+| Touch ID / SEP | Discovery attached (12 endpoints, ready ~1.45 s). One bounded sensor authentication session **accepted** by the enclave on the `sep-sensor` trial | Authentication only: no patch/calibration upload, enrollment, matching, xART writes or persistent biometric support |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
 The opt-in open-network Wi-Fi kernel
@@ -293,4 +293,34 @@ signature validity is untested until the enclave sees them.
 The `sep-sensor` candidate was then staged unarmed. The ESP needed room: an
 unreferenced 203 MB `aurora/desktop-probe-20261113.tar.gz` was moved, hash-verified,
 to `/var/lib/j716s/esp-archive/`. No sensor operation has run.
+
+### Sensor authentication trial — 2026-11-14
+
+The armed cold boot selected `7.3.0-j716s-8ab10100a4c1-sep-sensor` with exactly
+one copy of each safe SEP parameter plus `apple_sep.sensor_auth_probe=1`. Before
+loading, `spi0.0` (`spi:mesa-fingerprint`) existed unbound. One `modprobe apple_sep`:
+
+- Safety mode logged as bounded identity/authentication only; xART writes,
+  provisioning, trusted keys, FileVault, capture, templates and persistence
+  disabled; `complete_attach` forbidden.
+- Same xART view as discovery (170 slots, 12 live records, writes disabled).
+- `apple-mesa spi0.0` bound at 8 MHz, SPI mode 2, 20 ns CS timing; the sensor
+  power line came from the device node.
+- `sbio` reported a changed biometric device list, then
+  `sensor_auth: stage=17 errno=0 sep_status=0x00000000 result=session-accepted`;
+  the driver powered the sensor off afterwards.
+- Ready in 1,453 ms with the same 12 endpoints; key store open; hwrng
+  registered; `matching: blocked`; `xart: disabled`; no failed services.
+
+The diag `policy` line reports `xart_guard=0` while the kernel safety line says
+guard 2. With `xart_writes=0` no xART write path runs at all, so the guard has
+nothing to filter. This reporting difference has not been explained further.
+
+So the enclave accepted one authenticated session with this unit's sensor while
+the prepared same-unit material was installed. Which material the session used
+is not separately observed. The sensor patch upload,
+calibration, enrollment, matching, PAM integration and any persistence remain
+unimplemented and unqualified. Private evidence is under
+`/var/lib/j716s/sep-sensor/<boot-id>/`. A macOS Touch ID check after this trial
+is still required.
 

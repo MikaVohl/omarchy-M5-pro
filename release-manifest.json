@@ -3,7 +3,7 @@
   "description": "Published source files only; generated build and machine receipts are excluded. Hashes provide integrity, not independent signing or hardware qualification.",
   "files": {
     ".gitignore": "bc3ec096584434fd72edd04cfce3950cf772fee8d92e5f84e7065461f4839c82",
-    "CHANGELOG.md": "195d2d8950a43a6153b4ed5315c1e54786267f255a3b5ce29f6887aa3ee27552",
+    "CHANGELOG.md": "0cc0890ba24c958a2e4d00c5a981bc10f1752bfc5331c7f8350bf857db2c62ee",
     "LICENSE": "f70a9b5041f4af115ee70b932337181a7f72ecf2ab68e3a76871525e73be5945",
     "LICENSES/Asahi-MIT.txt": "11ca423a564b52d3b7f260398baa20d016c25ae180fbdd0067c27b7d1ed7b420",
     "LICENSES/Aura-notice.txt": "acb8a11264fd9c639b8659b0d971fa9d708698d57bf6e499eabaf957c393dff5",
@@ -13,7 +13,7 @@
     "Makefile": "b5c571535a3c8bdd5248e1448f4cf000599f24d59a86278ba4619b65688cf2e7",
     "README.md": "c918347dd276127fe96d5a010e61d02a9c23e84d8027d5328598e3dca264e109",
     "docs/console.md": "d72407c8ad45f0c04bb982426c3d934b6a4e94c5196a42185df96342932fb5b2",
-    "docs/hardware-status.md": "cb4447fd5a7c0afc20f6b36b5b4376d32238af51824284abc21661f921e72009",
+    "docs/hardware-status.md": "98aba13d21e453851a7aa99839924c5e680c74847a770f5890d9a9aea24981ac",
     "docs/provenance.md": "7e53313e5fb0312ea2862299c122c9e75dff265fd12b8affa1e02e898fe26eff",
     "docs/recovery.md": "58c575e33e78700948597596743b4a1ced1d64011279a33af4cb5357a4305485",
     "docs/setup.md": "f373ed824c274289fe3054f486e78012ddb234fa3dc369429b27d1e7d937b6c2",
