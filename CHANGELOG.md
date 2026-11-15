@@ -1,5 +1,23 @@
 # Changelog
 
+
+## Qualification record integration
+
+- Integrate the archived factory-data session `2026-11-15T03-50-42-200Z_01a1dd54-2718-7505-9803-008623374b39`; retain its existing source and detailed records without repeating hardware tests.
+- Consolidate speaker offline compilation, ProRes/camera preparation, ALS HmCA non-equivalence and AVE/ANE mismatch evidence in the feature matrix; keep hardware safety and ABI gates explicit.
+- Record 63 executed targeted tests and 13 additional host-fixture assertions, not new hardware passes; correct the README's stale awaiting-first-bringup-boot summary.
+- Record basic Touch ID enrollment, matching and real Quickshell fingerprint PAM unlock; retain sudo/polkit, reboot-matching and macOS-return qualification boundaries. Document the pinned v4/v5 libfprint build and its explicit repository-package cutover.
+
+## Factory-data bringup progress — 2026-11-14
+
+- Recover complete exact-unit AID41 speaker tuning and factory calibration from retained macOS 26C5035r using a patched, read-only APFS reader; add hash-pinned preparation/verification with cross-unit/vendor/build refusal.
+- Validate the unmodified speaker bundle with a schema-compatible offline reader and compile a unit-bound six-channel Spp3 blob. Keep playback guarded: this macOS build lacks differential parity qualification and the new protection stack remains alpha.
+- Preserve exact-build camera tuning and current ISP handoff provenance; refuse stale physical-range reuse and keep sensor identity/privacy/ABI qualification explicit.
+- Preserve same-unit ALS HmCA factory material without mislabelling it as CalibrationData; add boot-guarded, hash-anchored installation/rollback for genuine IORegistry CalibrationData only.
+- Add passive Bluetooth voice-negotiation/SCO-header capture with mandatory locked kernel filtering, without recording audio or claiming SCO delivery.
+- Extract exact 26C5035r/T6050 AppleProResHW 627 native init tables into a pinned private APRI candidate; keep installation/startup outside preparation.
+- Add an isolated AVE/ANE diagnostic patch that distinguishes actual/expected geometry and measured/unmeasured TEXT digests without broadening acquisition guards; exercise the exact ANE-layout refusal in the production handoff fixture.
+
 ## Touch ID kernel and Omarchy integration — 2026-11-14
 
 - Add `kernel-j716s-touchid.patch`: J716s Touch ID profile (J714s protocol, `0x1c000` capacity), refusing trusted keys, the FileVault API and an unguarded xART.

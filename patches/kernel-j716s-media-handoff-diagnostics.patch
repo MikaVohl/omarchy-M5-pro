@@ -1,0 +1,104 @@
+From: Omarchy J716s bringup
+Subject: [PATCH] apple: report rejected AVE and ANE handoffs without granting access
+
+Base: 8ab10100a4c1c944797e3fc8345589aff57777df
+ANE observation follows upstream 79e1e9f88449f2ad8a9a97648f91df8c656157d2,
+limited to existing H17 platforms. Preload reservations must still pass the
+no-map/outside-System-RAM check before TEXT is read. Acquisition still needs
+the original layout, TEXT pin and cold-boot evidence; nothing starts on a
+layout mismatch. Distinguish a failed map from an actually measured digest,
+and prefer the layout error over the untested pin. Do not log physical
+addresses. AVE's segment-size admission condition is unchanged.
+
+This is an isolated source candidate, not installed or armed.
+
+---
+diff --git a/drivers/accel/ane/ane_fw_cold.c b/drivers/accel/ane/ane_fw_cold.c
+--- a/drivers/accel/ane/ane_fw_cold.c
++++ b/drivers/accel/ane/ane_fw_cold.c
+@@ -2126,6 +2126,7 @@
+ 	struct device_node *chosen __free(device_node) = of_find_node_by_path("/chosen");
+ 	struct ane_fw_handoff h = {};
+ 	u8 digest[SHA256_DIGEST_SIZE] = {};
++	bool layout_ok, text_measured = false;
+ 	unsigned int i;
+ 
+ 	if (chosen)
+@@ -2142,13 +2143,20 @@
+ 			       !strcmp(name, i ? "firmware-data" : "firmware-text") &&
+ 			       !ane_fw_preload_range(np, i, &h.phys[i], &h.size[i]);
+ 	}
+-	if (h.regions_ok && ane_fw_preload_ranges_valid(soc, h.phys, h.size, h.dva)) {
++	layout_ok = h.regions_ok && ane_fw_preload_ranges_valid(soc, h.phys, h.size, h.dva);
++	/*
++	 * Observation only: preload_range() already proved a no-map reservation
++	 * outside System RAM. Hash its TEXT without granting DMA or engine access.
++	 * Keep layout and pin checks together for acquisition, as before.
++	 */
++	if (h.regions_ok) {
+ 		void *text = memremap(h.phys[0], h.size[0], MEMREMAP_WB);
+ 
+ 		if (text) {
+ 			sha256(text, h.size[0], digest);
+ 			memunmap(text);
+-			h.text_ok = !memcmp(digest, soc->text_pin, sizeof(digest));
++			text_measured = true;
++			h.text_ok = layout_ok && !memcmp(digest, soc->text_pin, sizeof(digest));
+ 		}
+ 	}
+ 	*hp = h;
+@@ -2157,10 +2165,19 @@
+ 	dev_info(&pdev->dev, "H17 ANE: no loader hand-off (%s); leaving the engine alone\n",
+ 		 !h.marker || strcmp(h.marker, ANE_FW_COLD_BOOT_EVIDENCE) ? "raw-boot marker" :
+ 		 !h.preloaded || !h.regions_ok ? "preload reservations" :
+-		 !h.text_ok ? "firmware TEXT pin" : "preload layout");
+-	if (h.regions_ok && !h.text_ok)
+-		dev_info(&pdev->dev, "H17 ANE: preloaded TEXT sha256 %*phN\n",
+-			 (int)sizeof(digest), digest);
++		 !layout_ok ? "preload layout" :
++		 !text_measured ? "firmware TEXT not mapped" : "firmware TEXT pin");
++	if (h.regions_ok) {
++		dev_info(&pdev->dev,
++			 "H17 ANE: preload TEXT size %#llx @%#llx, DATA size %#llx @%#llx (%s)\n",
++			 h.size[0], h.dva[0], h.size[1], h.dva[1],
++			 layout_ok ? "layout as expected" : "layout differs");
++		if (text_measured)
++			dev_info(&pdev->dev, "H17 ANE: preloaded TEXT sha256 %*phN\n",
++				 (int)sizeof(digest), digest);
++		else
++			dev_info(&pdev->dev, "H17 ANE: preloaded TEXT sha256 not measured\n");
++	}
+ 	return false;
+ }
+ 
+diff --git a/drivers/media/platform/apple/ave/ave-fw.c b/drivers/media/platform/apple/ave/ave-fw.c
+--- a/drivers/media/platform/apple/ave/ave-fw.c
++++ b/drivers/media/platform/apple/ave/ave-fw.c
+@@ -193,7 +193,9 @@
+ 	if (ave->text.size != ave->variant->fw_text_size ||
+ 	    ave->data.size != ave->variant->fw_data_size)
+ 		return dev_err_probe(dev, -EINVAL,
+-				     "unexpected firmware segment sizes\n");
++				     "unexpected firmware segment sizes: TEXT %#zx DATA %#zx, expected TEXT %#x DATA %#x\n",
++				     ave->text.size, ave->data.size,
++				     ave->variant->fw_text_size, ave->variant->fw_data_size);
+ 	if ((ave->text.phys < ave->data.phys + ave->data.size &&
+ 	     ave->data.phys < ave->text.phys + ave->text.size) ||
+ 	    (ave->text.iova < ave->data.iova + ave->data.size &&
+diff --git a/drivers/accel/ane/ane_fw_cold_test.c b/drivers/accel/ane/ane_fw_cold_test.c
+--- a/drivers/accel/ane/ane_fw_cold_test.c
++++ b/drivers/accel/ane/ane_fw_cold_test.c
+@@ -220,6 +220,13 @@
+ 	h = good;
+ 	h.size[1] = 0x2a8000;
+ 	KUNIT_EXPECT_FALSE(test, ane_fw_cold_handoff_valid(&h, &soc));
++	/* J716s 26C5035r: even a measured/matching digest cannot admit this layout. */
++	h = good;
++	h.size[0] = 0xec000;
++	h.size[1] = 0x280000;
++	h.dva[1] = 0x100000ec000ULL;
++	KUNIT_EXPECT_FALSE(test, ane_fw_cold_handoff_loader_ok(&h, &soc));
++	KUNIT_EXPECT_FALSE(test, ane_fw_cold_handoff_valid(&h, &soc));
+ 	h = good;
+ 	h.dva[0] = 0x10000004000ULL;
+ 	KUNIT_EXPECT_FALSE(test, ane_fw_cold_handoff_valid(&h, &soc));

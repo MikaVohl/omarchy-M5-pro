@@ -16,13 +16,13 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Bluetooth | Connected headset, audible A2DP playback and user-observed play/pause toast; RFCOMM/BNEP sockets work | HFP mic test failed: pinned transport lacks SCO packet support; LE/PAN traffic and prolonged reconnect remain unqualified |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
-| Video encode / ANE | AVE build/segment mismatch; ANE preload layout mismatch; engines remain guarded | No arbitrary firmware substitution or ABI guard removal |
-| Battery / sensors | Battery, cpufreq and WFI telemetry present | ALS needs same-unit calibration; TTPD is invalid-looking finite firmware data with unknown semantics |
-| Audio | Not qualified | Speakers intentionally disabled; do not remove the safety policy |
+| Video encode / ANE | Exact-build 2,880-byte ProRes APRI candidate prepared; AVE firmware-generation and ANE preload-layout mismatches established | No engine startup; diagnostic patch undeployed; acquisition/ABI guards remain |
+| Battery / sensors | Battery, cpufreq and WFI telemetry present; same-unit HmCA recovered | HmCA is not proven installable ALS CalibrationData; TTPD semantics remain unknown |
+| Audio | Same-unit AID41 tuning recovered and offline six-channel Spp3 blob compiled | 26C5035r differential parity unvalidated; no protection-runtime or playback pass; speakers stay disabled |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
-| Camera | Not qualified | No claim of support |
-| Touch ID / SEP | Discovery attached (12 endpoints, ready ~1.45 s). One bounded sensor authentication session **accepted** by the enclave on the `sep-sensor` trial | Authentication only: no patch/calibration upload, enrollment, matching, xART writes or persistent biometric support |
+| Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
+| Touch ID / SEP | `touchid` kernel running; finger enrolled; successful Quickshell fingerprint PAM authentication and unlock observed | Sudo/polkit configured, not separately exercised; SDDM remains password-based; reboot matching and shared-enclave durability unqualified |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
 The opt-in open-network Wi-Fi kernel
@@ -38,6 +38,14 @@ See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 Obtain and verify a current backup before partitioning or deployment.
 
 ## Bringup improvements — 2026-11-14
+
+The factory-data results below include session
+`2026-11-15T03-50-42-200Z_01a1dd54-2718-7505-9803-008623374b39`,
+whose recorded checks are dated 2026-11-14. Its source and detailed records
+were already present when integrated; no hardware experiment was repeated.
+Preparation removed missing-data blockers, not hardware safety or ABI gates.
+See [verification](verification.md#factory-data-session-integration) for the
+executed checks and remaining qualification boundaries.
 
 The live WirePlumber fallback sink used the speaker port but did not contain
 `Speakers` in its name. The repo and installed policy now disable every
@@ -71,9 +79,11 @@ override or browser sandbox weakening was added.
 
 AVE's current 26C5035r image does not match the pinned driver's admitted build
 and TEXT size. ANE handoff exists, but its preload ranges do not match the pinned
-profile; the logged zero hash is not a measured firmware hash. ProRes needs
-validated T6050 register rows. Camera requires a J716s/26C5035r handoff and sensor
-data; copying another board's firmware is not a solution. These guards remain.
+profile; the logged zero hash is not a measured firmware hash. ProRes initially
+lacked validated T6050 register rows; exact-build native extraction is recorded
+below, without engine qualification. Camera still requires a J716s/26C5035r
+handoff and sensor data; copying another board's firmware is not a solution.
+These guards remain.
 
 USB, PD, external displays, charging and suspend need attended physical tests.
 The read-only campaign helper records both cable orientations, before/after
@@ -327,4 +337,160 @@ After the trial the owner booted macOS and reported Touch ID unlock and matching
 working normally. The next Linux start returned to the bringup default with the
 marker spent and boot-guard checks passing. This is one owner-observed return,
 not an independent enclave-state audit.
+
+
+## Speaker factory tuning recovered — 2026-11-14
+
+On `7.3.0-j716s-8ab10100a4c1-touchid`, the J716 macaudio card and all six
+SN012776 controls exist. The pinned board configuration caps both safe and
+unlocked output at -30 dB. The live kernel still exposes the locked maximum of
+1 on every speaker-volume control, no internal PipeWire playback sink and a
+masked/inactive `speakersafetyd`. Amp gain reads 15; the old provisional
+gain-10 experiment is not the current hardware configuration.
+
+The retained macOS System and Preboot volumes were mounted **read-only** using
+an isolated, patched APFS reader, without opening encrypted Data or supplying
+FileVault credentials. SystemVersion.plist confirmed `26C5035r`. The pinned
+[Aurora collector](https://github.com/aurora-silicon/aurora-installer/tree/e8f0711f8f77cc5fdaf3f78348321d865a3818bc/tools/speaker-tuning)
+recovered 35 AID41 source files (41 bundle files), speaker vendor 3, the live
+ADT's 138-byte six-speaker factory calibration, the AudioDSP lattice and
+BuzzKill matrix. Board/build/vendor and same-unit serial-hash binding passed.
+The serial number and Apple data are not published.
+
+`scripts/prepare-speaker-tuning.py` reproduced the collection into a new private
+package and verified every upstream manifest record and the local receipt.
+Four targeted regressions passed, including foreign-unit, vendor/build,
+missing-calibration and writable-System refusal. The APFS patch applies without
+fuzz; its compiled reader actually read the retained System/Preboot. Both mounts
+were unmounted after material preparation.
+
+This removes the **missing factory data** blocker, not the speaker safety gate.
+The old J716 profile explicitly copies unmeasured J316 thermal parameters; it
+was not installed. The new protection stack's
+[v2 README](https://github.com/aurora-silicon/speakerguardd/blob/v2/README.md)
+marks it alpha/not-for-use. Its default `04169c4` reader refused the collector's
+new `buzzkill_quadrature` field; metadata was not stripped to force acceptance.
+The schema-aware `54c911c` reader then validated the unmodified bundle and
+compiled a private 1,668-byte Spp3 protection blob: six output channels, twelve
+sense channels, 48 kHz, J716s binding and same-unit calibration in use. It
+reported **26C5035r is not a validated build (reference: 25G83)** and requires
+the differential rig. This is offline compiler proof, not a runtime protection
+or playback pass. The blob is not installed.
+No daemon was started or unmasked, no speaker PCM was opened and no boot payload
+or audio policy was changed. Safe enablement still needs compatible protection
+code, exact sense mapping/scaling, DSP routing and dead-daemon interlock proof.
+
+
+## Camera and ALS material preparation — 2026-11-14
+
+The retained exact-build System daemon supplied a byte-identical 28,672-byte
+`isp_2224_01XX.dat` candidate from all three universal-binary copies.
+`scripts/prepare-camera-firmware.py` pins the extractor and daemon bytes,
+records current-boot ADT provenance and refuses an externally unanchored or
+changed package. Seven isolated camera regressions and a live package check
+passed. The private package remains under ignored `outputs/firmware/`.
+
+The live ISP is disabled, preloaded and exclave-assigned (SIDs 4/5/8/9).
+Its current TEXT/DATA physical addresses differ from the old static camera
+overlay; that overlay must not be deployed. Platform ID 118 does not establish
+IMX958 identity. Linux still lacks the firmware memory-region handoff, and
+firmware ABI, sensor identity, privacy indicator and coprocessor quiescence
+remain unqualified. No camera was started or firmware installed.
+
+Read-only ISC Hardware-cache recovery found one genuine same-unit HmCA IMG4
+record (12,376 bytes; payload 9,962 bytes), preserved with its unit seal.
+**HmCA is not yet proven equivalent to ALS IORegistry `CalibrationData`.**
+No conversion was invented and it was not installed as `aop-als-cal.bin`.
+The live ALS ADT contains no calibration. Existing exact-unit macOS IORegistry
+capture remains the supported source for installable calibration.
+
+The ALS tool now has hash-anchored dry-run/install/check/rollback operations
+for a genuine prepared CalibrationData package. Boot/firmware identity is
+required and rollback binds both bytes and the published inode. Eighteen
+targeted port/ALS tests passed. No ALS calibration was installed, no AOP
+activation was issued, and the missing-calibration hardware limitation remains.
+
+Bluetooth gained a passive negotiation/SCO-header evidence collector with a
+locked kernel BPF privacy filter; ACL/ISO/vendor/key packets and SCO audio
+payloads are excluded before userspace. Eighteen regressions passed, including
+real Linux socket-filter execution on synthetic datagrams. A one-second idle
+HCI monitor capture completed with zero control records and no Bluetooth state
+changes. This verifies the tool only, not the headset mic. Transport SCO TX/RX
+and exact-firmware ring framing/credits remain missing; no speculative rings
+were enabled and the failed microphone experiment was not repeated.
+
+
+## Exact-build encoder and neural-engine progress — 2026-11-14
+
+Retained 26C5035r Preboot supplied genuine AppleProResHW 627 tables selected by
+T6050's native device-ID paths. `scripts/prepare-prores-firmware.py` generated
+a private 2,880-byte APRI candidate with 82/80/62/12 register rows; its control
+block preserves eleven CED rows and translates the native SSW memory-index-4
+row to `ctrl+0x1000`. Source and decoded-image hashes, native pointer encoding,
+terminators, row bounds and final candidate bytes are pinned. No foreign-chip
+tables or arbitrary row-map input were used. The offline package check passed;
+the image is **not installed and ProRes has not started**.
+
+AVE's actual image is `AppleAVE2FW-9013.55.1.release`: TEXT `0x158000`, DATA
+`0x134000`. The file TEXT CRC matches the live loader CRC. The pinned driver
+[qualifies 26A428](https://github.com/aurora-silicon/linux/commit/55b7401a4b03bbedb487aae09770bafc0a17cefd)
+and expects TEXT `0x154000`; the 26C5035r image is a different firmware
+generation, not an absent file. Changing just the size/build allowlist would
+not establish command/protocol compatibility. AVE's `-EINVAL` guard remains.
+
+ANE **is handed over by the loader**: current preload TEXT/DATA sizes are
+`0xec000`/`0x280000`, with DATA IOVA offset `0xec000`. The pinned profile
+requires `0xc0000`/`0x2ac000`, with offset `0xc0000`. Current code does not hash
+the rejected layout, then misleadingly logs a zero digest as a TEXT-pin
+failure. A retained-file TEXT digest was measured privately; it is not a
+live-preload measurement or evidence that the engine can safely start.
+
+`patches/kernel-j716s-media-handoff-diagnostics.patch` is an isolated,
+**undeployed** candidate. It improves AVE actual/expected-size diagnostics and
+ANE refusal reasons, hashes ANE TEXT only after existing no-map/outside-RAM
+reservation checks, and distinguishes measured/unmeasured hashes. Layout,
+TEXT-pin and cold-handoff acquisition checks remain. Observation follows
+[upstream ANE work](https://github.com/aurora-silicon/linux/commit/79e1e9f88449f2ad8a9a97648f91df8c656157d2)
+without broadening admission. Sixteen offline media tests and zero-fuzz patch
+application passed. A throwaway host compilation executed the production
+KUnit handoff fixture (13 assertions), including refusal of the exact new
+geometry even with `text_ok=true`; this is not a full kernel build/KUnit boot.
+No encoder/ANE startup, module load, boot arming or default selection occurred.
+
+## Enablement checkpoint — 2026-11-14
+
+The running release is `7.3.0-j716s-8ab10100a4c1-touchid`, with platform state
+`ready` and `libfprint-git 2:1.94.100.aurora.a227a35-1`. fprintd lists an
+enrolled right index finger. The existing 22:17:24–22:17:26 journal shows the
+Quickshell session becoming secure, starting PAM with
+`omarchy-lock-fingerprint`, prompting for the enrolled finger, authenticating
+successfully and unlocking. This qualifies **basic enrollment, matching and
+lock-screen fingerprint unlock**, superseding the sensor-authentication-only
+checkpoint above. It does not qualify SDDM biometric login.
+
+Sudo and polkit contain fingerprint authentication followed by password fallback
+and the lid-closed skip gate. Quickshell reports fingerprint available and
+password PAM present. Those readiness checks do not independently establish
+sudo/polkit authentication or password-fallback execution. A separate bounded
+`fprintd-verify` invocation reached verification but timed out after 45 seconds
+without a match result; it is not counted as a second successful check.
+
+No new kernel was selected during this checkpoint. The current Touch ID kernel
+is already running; the userspace library replacement does not require another
+kernel reboot. Reboot matching, repeated authentication and retained-macOS
+Touch ID after Linux enrollment remain separate qualification work. Linux has
+now used shared enclave storage; preserve the previously documented risk.
+
+**Basic bringup complete within the observed scope:** persistent desktop boot,
+internal display, accelerated rendering, keyboard/trackpad, the tested open
+Wi-Fi connection, Bluetooth A2DP, short hardware H.264 streaming, and Touch ID
+lock-screen unlock. These are not daily-driver certification or complete API,
+codec, security-mode and recovery coverage.
+
+**Remaining enablement:** speaker protection/parity and hardware interlock;
+ProRes installation and engine qualification; 26C5035r AVE/ANE compatibility;
+camera handoff/identity/privacy/capture; genuine ALS CalibrationData; Centauri
+SCO transport. USB-C/PD/charging/external displays and suspend still need
+attended physical qualification. Prepared files alone do not complete these
+features; speakers remain guarded and no unqualified engine was started.
 

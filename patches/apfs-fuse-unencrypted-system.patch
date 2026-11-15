@@ -1,0 +1,32 @@
+From: J716s bringup
+Subject: [PATCH] Permit unencrypted volumes when the hardware keybag is unavailable
+
+Base: sgan81/apfs-fuse 66b86bd525e8cb90f9012543be89b1f092b75cf3.
+Apple Silicon seals the keybag to hardware; System and Preboot need no key.
+Do not mislabel the container as unencrypted: ApfsVolume::Init still requires
+GetVolumeKey for encrypted volumes. DeviceLinux opens the source O_RDONLY.
+Include the integer header explicitly for GCC 16.
+
+--- a/ApfsLib/ApfsContainer.cpp
++++ b/ApfsLib/ApfsContainer.cpp
+@@ -186,8 +186,9 @@
+ 	{
+ 		if (!m_keymgr.Init(m_nx.nx_keylocker.pr_start_addr, m_nx.nx_keylocker.pr_block_count, m_nx.nx_uuid))
+ 		{
+-			std::cerr << "Initialization of KeyManager failed." << std::endl;
+-			return false;
++			// Apple Silicon seals the container keybag to hardware. Unencrypted
++			// volumes need no key; encrypted volumes still require GetVolumeKey.
++			std::cerr << "KeyManager unavailable; only unencrypted volumes can be read." << std::endl;
+ 		}
+ 	}
+ 
+--- a/ApfsLib/PList.h
++++ b/ApfsLib/PList.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <cstdint>
+ #include <vector>
+ #include <map>
+ #include <memory>

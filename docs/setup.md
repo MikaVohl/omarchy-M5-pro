@@ -153,6 +153,109 @@ observed payload. No streaming host was exercised, and HEVC/AV1/VP9 correctness,
 high-resolution throughput, decoder recovery and long-session stability remain
 unqualified. AVE/ANE/ProRes/camera firmware guards are not bypassed.
 
+### Exact-build ProRes preparation and engine diagnostics
+
+`scripts/prepare-prores-firmware.py` extracts T6050-selected native init tables
+from the **inspected 26C5035r krnl IM4P** in this Mac's retained Preboot. It pins
+both compressed and decoded source hashes and final APRI bytes; no arbitrary
+row map, foreign chip or guessed register values are accepted.
+
+```sh
+python3 -m venv work/build/prores-venv
+work/build/prores-venv/bin/pip install lzfse==0.4.2
+# KERNELCACHE is the private, exact-build krnl IM4P collected read-only.
+work/build/prores-venv/bin/python -B scripts/prepare-prores-firmware.py \
+  --kernelcache "$KERNELCACHE" --output outputs/firmware/new-j716s-prores
+work/build/prores-venv/bin/python -B scripts/prepare-prores-firmware.py \
+  --check outputs/firmware/new-j716s-prores
+```
+
+Run as the owner of the private inputs; directories/files must remain private.
+The output contains a 2,880-byte APRI candidate, not a hardware pass. No install
+or engine-start operation exists in this tool. ProRes needs a separately
+reviewed installation and attended kernel/engine qualification.
+
+AVE's current 26C5035r generation does not match the driver's 26A428 ABI. ANE
+has a loader preload, but its TEXT/DATA geometry differs from the pinned
+profile. `patches/kernel-j716s-media-handoff-diagnostics.patch` can be applied
+to the exact clean kernel source for an isolated diagnostic build; it improves
+rejection messages and safe TEXT observation, **not admission**. It is not
+part of any selected/deployed candidate. Do not remove size/pin/cold-handoff
+checks to make these engines start. See [hardware status](hardware-status.md#exact-build-encoder-and-neural-engine-progress--2026-11-14).
+
+
+### Same-unit speaker tuning preparation (no enablement)
+
+`scripts/prepare-speaker-tuning.py` collects real AID41 tuning and the six-speaker
+factory calibration from this Mac's retained **26C5035r System** volume. It
+requires a read-only mount, J716s/T6050 identity, the running unit's serial hash
+and the same valid speaker-vendor strap. It never starts a daemon, changes UCM,
+unmasks audio, installs firmware or changes boot selection.
+
+Fetch the pinned MIT-licensed collector archive into ignored local build state:
+
+```sh
+mkdir -p work/build/speaker-bringup
+curl --fail --location --output work/build/speaker-bringup/installer.tar.gz \
+  https://codeload.github.com/aurora-silicon/aurora-installer/tar.gz/e8f0711f8f77cc5fdaf3f78348321d865a3818bc
+# The preparation tool checks SHA-256 before extracting/executing source.
+sudo python3 -B scripts/prepare-speaker-tuning.py \
+  --source-archive work/build/speaker-bringup/installer.tar.gz capture \
+  --macos-root /run/j716s-macos-system/root \
+  --output /var/lib/j716s/speaker-tuning/prepared-26C5035r
+sudo python3 -B scripts/prepare-speaker-tuning.py \
+  --source-archive work/build/speaker-bringup/installer.tar.gz verify \
+  --package /var/lib/j716s/speaker-tuning/prepared-26C5035r
+```
+
+The directory must be new and remains private (0700/0600), including incomplete
+attempts. Do not publish the package or reuse another unit's calibration.
+
+For read-only System access on Apple Silicon, the upstream `apfs-fuse`
+`66b86bd525e8cb90f9012543be89b1f092b75cf3` reader needs
+`patches/apfs-fuse-unencrypted-system.patch`: failure to unwrap the hardware
+container keybag must not reject an **unencrypted** System/Preboot volume.
+Encrypted volumes still require their own keys. The reader opens the disk
+O_RDONLY; no write-capable APFS driver or FileVault credentials are needed.
+
+Build in ignored local state with native CMake, C++, FUSE3, zlib and bzip2:
+
+```sh
+cd work/build/speaker-bringup
+curl --fail --location -o apfs-fuse.tar.gz \
+  https://codeload.github.com/sgan81/apfs-fuse/tar.gz/66b86bd525e8cb90f9012543be89b1f092b75cf3
+echo 'e78e71e87d8ba182822ec34233189141b8816c9a3f700c9a22f6dc1480afee51  apfs-fuse.tar.gz' | sha256sum -c -
+tar -xzf apfs-fuse.tar.gz
+curl --fail --location -o lzfse.tar.gz \
+  https://codeload.github.com/lzfse/lzfse/tar.gz/e634ca58b4821d9f3d560cdc6df5dec02ffc93fd
+echo 'ca98aa6644d44500e3315858daa747ce15bd06d49e3edb12a5458e5525e8ebdb  lzfse.tar.gz' | sha256sum -c -
+tar -xzf lzfse.tar.gz --strip-components=1 \
+  -C apfs-fuse-66b86bd525e8cb90f9012543be89b1f092b75cf3/3rdparty/lzfse
+patch --batch --fuzz=0 -p1 -d apfs-fuse-66b86bd525e8cb90f9012543be89b1f092b75cf3 \
+  < ../../../patches/apfs-fuse-unencrypted-system.patch
+cmake -S apfs-fuse-66b86bd525e8cb90f9012543be89b1f092b75cf3 -B apfs-build \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build apfs-build --target apfs-fuse apfsutil -j6
+# Substitute the rediscovered retained-macOS partition, not a whole disk.
+sudo apfs-build/apfsutil /dev/RETAINED_MACOS_PARTITION
+# Read the reported role/index: mount System only, never encrypted Data.
+sudo mkdir -p /run/j716s-macos-system
+sudo apfs-build/apfs-fuse -o ro,allow_other -v SYSTEM_INDEX \
+  /dev/RETAINED_MACOS_PARTITION /run/j716s-macos-system
+```
+
+Unmount with `sudo umount /run/j716s-macos-system` after collection. If a snapshot
+is needed, use the System snapshot XID reported by `apfsutil` with `-o snap=XID`;
+the capture tool still requires the exact System build. Never use lax mode.
+
+The factory bundle removes a missing-data blocker, **not** the safety admission
+gate. The old J716 profile copies unmeasured J316 thermal parameters; do not
+install it to force playback. The newer `speakerguardd` v2 protection stack is
+explicitly alpha/not-for-use. Its reader/compiler may be exercised offline;
+deploying it and qualifying sense mapping, thermal parity, DSP routing and the
+dead-daemon interlock are separate work. Keep the existing speaker guard intact.
+
+
 ### Read-only port, power and recovery evidence
 
 ```sh
@@ -185,6 +288,58 @@ python3 scripts/prepare-als-calibration.py prepare /private/new-als-capture \
 
 The serial-hash gate prevents another unit's calibration being staged. Factory
 plists/calibration remain private. This does not install or qualify the sensor.
+
+Once genuine CalibrationData has been prepared, compute the private manifest's
+SHA-256 and supply it explicitly to the installer. The dry-run checks the live
+boot guard, exact firmware pairing, all source hashes and same-unit identity:
+
+```sh
+sha256sum outputs/firmware/j716s-als/als-calibration-manifest.json
+sudo python3 -B scripts/prepare-als-calibration.py check-install \
+  outputs/firmware/j716s-als --manifest-sha256 MANIFEST_SHA256
+# Only after the dry-run accepts this genuine package:
+sudo python3 -B scripts/prepare-als-calibration.py install \
+  outputs/firmware/j716s-als --manifest-sha256 MANIFEST_SHA256
+sudo python3 -B scripts/prepare-als-calibration.py rollback
+```
+
+Installation publishes firmware and a receipt, without restarting or loading
+AOP. Rollback refuses changed/replaced bytes or publication inodes. Do not
+substitute the recovered HmCA factory IMG4: its equivalence to CalibrationData
+is unproven. `recover-factory --device /dev/ISC_PARTITION --partition-uuid
+ACTUAL_GPT_PARTUUID --output /private/new-hmca` preserves that evidence only.
+
+Camera preparation uses the read-only System mount described above and the
+current boot's raw ADT, not the stale physical ranges of an older overlay:
+
+```sh
+sudo python3 -B scripts/prepare-camera-firmware.py prepare \
+  --system-root /run/j716s-macos-system/root \
+  --output outputs/firmware/j716s-26C5035r-camera-private
+# Save the manifest SHA-256 printed by prepare independently, then:
+sudo python3 -B scripts/prepare-camera-firmware.py check \
+  outputs/firmware/j716s-26C5035r-camera-private --manifest-sha256 MANIFEST_SHA256
+```
+
+It extracts only the exact-build sensor-tuning candidate and records the
+current handoff. No ISP startup, privacy-indicator operation, firmware install
+or sensor-identity proof is implied. The package is boot-bound; collect again
+after a different handoff, rather than reusing old TEXT/DATA physical addresses.
+
+For passive Bluetooth voice-protocol evidence, without repeating a recording:
+
+```sh
+sudo python3 -B scripts/capture-bluetooth-sco.py --controller hci0 \
+  --duration 30 --output /var/lib/j716s/new-sco-evidence
+```
+
+The locked kernel filter discards unrelated/key traffic and SCO payloads before
+userspace. Only negotiation metadata and aggregate SCO header counts are kept.
+The tool does not select HFP, connect/disconnect peers or send HCI commands.
+Monitor TX counts requests, **not successful firmware delivery**; unopened RX
+rings are invisible. Exact Centauri SCO framing/routing/credits still need
+evidence before a transport patch can be justified.
+
 
 
 ## 4. Prepare your matching firmware
@@ -570,8 +725,35 @@ With that options file present, the one-shot SEP discovery/sensor trials cannot
 load the driver (their command-line parameters would be duplicated); remove the
 overlay before repeating them.
 
+The pinned kernel exposes `/dev/sep-bio` interface version 5. Omarchy's
+observed `libfprint-git 1:1.94.100.r10.g6f9479c-5` accepts version 4 only and
+fprintd ignores the reader. Use the pinned
+[`packaging/libfprint-git-aurora/PKGBUILD`](../packaging/libfprint-git-aurora/PKGBUILD)
+for v4/v5 support before enrollment. It packages libfprint 1.94.100 plus the
+complete Aurora userspace patch series and the pinned kernel UAPI header.
+Build in ignored local state; sign the package with a locally trusted key
+when the target requires local-file signatures:
+
+```sh
+mkdir -p work/libfprint-aurora/rebuild
+cp packaging/libfprint-git-aurora/PKGBUILD work/libfprint-aurora/rebuild/
+(cd work/libfprint-aurora/rebuild && makepkg --syncdeps --sign)
+```
+
+Install the resulting trusted package with `pacman -U`, then restart fprintd
+if it was running against the old library. No kernel reboot is needed solely
+for this userspace replacement. Epoch 2 prevents the observed v4-only package
+from replacing it automatically; explicitly reinstall the repository package
+once that package supports v5. Do not globally disable signature verification.
+
 After rebooting into the `touchid` kernel, run `omarchy-setup-security-fingerprint`.
 It explains the shared-enclave risk and asks before turning Touch ID on.
+
+Successful setup enrolls and matches before configuring sudo, polkit and the
+Quickshell lock screen. SDDM remains password-based. If a finger is already
+enrolled, verify it with `fprintd-verify` instead of rerunning enrollment.
+Enrollment and configured PAM files do not by themselves prove each actual
+authentication surface or matching after a cold boot.
 
 ## Source maintenance and checks
 

@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from contextlib import ExitStack
 
 HERE = Path(__file__).resolve().parent
 
@@ -154,6 +155,113 @@ class CalibrationTests(unittest.TestCase):
              patch.object(als.subprocess, "check_output", side_effect=["Mac17,8\n", "different\n"]):
             with self.assertRaises(ValueError):
                 als.capture(Path("unused"), PROFILE)
+
+
+class CalibrationDeploymentTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        source = capture_fixture(self.root / "capture")
+        self.serial = put(self.root, "serial", b"UNIT-A\0")
+        report, blob = als.inspect(source, PROFILE, self.serial)
+        self.package = self.root / "prepared"
+        als.save_new(self.package, {als.FIRMWARE: blob, als.MANIFEST: als.json_bytes(report),
+                                   **{name: (source / name).read_bytes()
+                                      for name in ("als.plist", "platform.plist", "capture.json")}})
+        self.anchor = als.sha((self.package / als.MANIFEST).read_bytes())
+        self.target = self.root / "runtime" / "aop-als-cal.bin"
+        self.receipt = self.root / "runtime" / "receipt.json"
+        self.target.parent.mkdir(mode=0o700)
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.object(als, "SERIAL_PATH", self.serial))
+        stack.enter_context(patch.object(als, "TARGET", self.target))
+        stack.enter_context(patch.object(als, "RECEIPT", self.receipt))
+        # Runtime qualification is the existing root boot guard, not test hardware.
+        stack.enter_context(patch.object(als, "runtime_preflight"))
+        stack.enter_context(patch.object(als, "trusted_runtime"))
+
+    def test_checked_package_requires_anchor_sources_and_unit(self):
+        report, blob = als.checked_package(self.package, PROFILE, self.anchor)
+        self.assertEqual(blob, BLOB)
+        self.assertTrue(report["target_unit_matches"])
+        with self.assertRaisesRegex(ValueError, "external SHA256"):
+            als.checked_package(self.package, PROFILE, "0" * 64)
+        self.serial.write_bytes(b"UNIT-B\0")
+        with self.assertRaisesRegex(ValueError, "different physical unit"):
+            als.checked_package(self.package, PROFILE, self.anchor)
+        self.serial.write_bytes(b"UNIT-A\0")
+        (self.package / als.FIRMWARE).write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "source evidence differs"):
+            als.checked_package(self.package, PROFILE, self.anchor)
+
+    def test_check_install_writes_nothing_then_private_install_rolls_back(self):
+        report = als.install(self.package, PROFILE, self.anchor, False)
+        self.assertTrue(report["check_only"])
+        self.assertEqual(list(self.target.parent.iterdir()), [])
+        report = als.install(self.package, PROFILE, self.anchor, True)
+        self.assertFalse(report["aop_touched"])
+        self.assertEqual(self.target.read_bytes(), BLOB)
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.receipt.stat().st_mode & 0o777, 0o600)
+        receipt = json.loads(self.receipt.read_bytes())
+        self.assertEqual(receipt["firmware_inode"], self.target.stat().st_ino)
+        self.assertEqual(receipt["manifest_sha256"], self.anchor)
+        with self.assertRaisesRegex(ValueError, "never overwrite"):
+            als.install(self.package, PROFILE, self.anchor, True)
+        self.assertTrue(als.rollback()["rolled_back"])
+        self.assertFalse(self.target.exists())
+        self.assertFalse(self.receipt.exists())
+
+    def test_rollback_refuses_changed_bytes_or_replaced_inode(self):
+        als.install(self.package, PROFILE, self.anchor, True)
+        self.target.write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "Calibration changed"):
+            als.rollback()
+        self.target.write_bytes(BLOB)
+        replacement = self.root / "replacement"
+        replacement.write_bytes(BLOB)
+        replacement.chmod(0o600)
+        replacement.replace(self.target)
+        with self.assertRaisesRegex(ValueError, "inode changed"):
+            als.rollback()
+        self.assertEqual(self.target.read_bytes(), BLOB)
+        self.assertTrue(self.receipt.exists())
+
+    def test_partial_receipt_can_rollback_without_target(self):
+        als.install(self.package, PROFILE, self.anchor, True)
+        self.target.unlink()
+        self.assertTrue(als.rollback()["rolled_back"])
+        self.assertFalse(self.receipt.exists())
+
+    def test_exclusive_publisher_never_clobbers(self):
+        self.target.write_bytes(b"someone else's calibration")
+        with self.assertRaises(FileExistsError):
+            als.publish_new(self.target, BLOB)
+        self.assertEqual(self.target.read_bytes(), b"someone else's calibration")
+        self.assertEqual(list(self.target.parent.iterdir()), [self.target])
+
+    def test_private_package_rejects_world_readability_and_links(self):
+        manifest = self.package / als.MANIFEST
+        manifest.chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "private single-link"):
+            als.checked_package(self.package, PROFILE, self.anchor)
+        manifest.chmod(0o600)
+        link = self.root / "linked-manifest"
+        link.symlink_to(manifest)
+        with self.assertRaisesRegex(ValueError, "symlinks"):
+            als.private_read(link)
+        with self.assertRaisesRegex(ValueError, "traversal"):
+            als.private_read(self.package / ".." / "serial")
+
+    def test_factory_envelope_is_not_an_installable_package(self):
+        factory = self.root / "factory"
+        als.save_new(factory, {"factory/HmCA.img4": BLOB,
+                               "factory-recovery.json": b'{"installable_calibration": false}\n'})
+        with self.assertRaises(FileNotFoundError):
+            als.checked_package(factory, PROFILE, self.anchor)
+
 
 
 class EvidenceTests(unittest.TestCase):

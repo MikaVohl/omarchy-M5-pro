@@ -71,6 +71,70 @@ GPU recovery fix. ALS preparation preserves per-unit Apple factory bytes and
 checks model/build/serial identity; those bytes and their raw plist evidence
 must not be published or substituted between units.
 
+### Same-unit speaker factory tuning
+
+The preparation wrapper executes only
+[aurora-installer e8f0711f8f77cc5fdaf3f78348321d865a3818bc](https://github.com/aurora-silicon/aurora-installer/tree/e8f0711f8f77cc5fdaf3f78348321d865a3818bc),
+archive SHA-256 `51b6c0f179d98a38ac1e1a1261eb1d94c3956742969eed278ef740fa67bd3c16`.
+Its MIT-licensed collector reads AID41's complete tuning directory, macOS 27's
+per-AID DSP database, the AudioDSP lattice/BuzzKill matrix and the live ADT's
+138-byte same-unit speaker calibration. No Apple tuning is redistributed.
+The wrapper rejects missing/foreign unit identity rather than accepting an
+open-loop fallback. Its private preparation receipt is not playback certification.
+
+The read-only APFS reader is
+[sgan81/apfs-fuse 66b86bd525e8cb90f9012543be89b1f092b75cf3](https://github.com/sgan81/apfs-fuse/tree/66b86bd525e8cb90f9012543be89b1f092b75cf3),
+archive SHA-256 `e78e71e87d8ba182822ec34233189141b8816c9a3f700c9a22f6dc1480afee51`,
+with `patches/apfs-fuse-unencrypted-system.patch`. Its compressor submodule is
+[lzfse e634ca58b4821d9f3d560cdc6df5dec02ffc93fd](https://github.com/lzfse/lzfse/tree/e634ca58b4821d9f3d560cdc6df5dec02ffc93fd),
+archive SHA-256 `ca98aa6644d44500e3315858daa747ce15bd06d49e3edb12a5458e5525e8ebdb`.
+Upstream licenses remain in fetched source; no reader binaries are published.
+
+The offline protection reader is not installed as a daemon.
+[speakerguardd v2](https://github.com/aurora-silicon/speakerguardd/tree/v2)
+explicitly remains alpha/not-for-use. The `04169c4470650f8e2554db70d4072fb92e484138`
+reader refuses the newer collector's `buzzkill_quadrature` field; that refusal
+must not be bypassed by deleting metadata. The schema-aware offline branch
+[54c911c7a7098af91f90375ae1b8d09f8588c79a](https://github.com/aurora-silicon/speakerguardd/tree/54c911c7a7098af91f90375ae1b8d09f8588c79a)
+uses archive SHA-256 `92e70bdb6210393b386a50f0d3defa4243dd8ec0773002bc09caaaedbeba4964`.
+Compile only `aurora-speaker-tuning` with `cargo build --locked --release -p
+aurora-speaker-tuning --bin aurora-speaker-tuning` in a fresh output tree.
+Reader/parameter validation does not establish macOS parity or safe hardware
+operation. Keep all derived blobs and reports private and the speaker guard on.
+
+### ProRes and engine diagnostic candidates
+
+The ProRes recipe pins the retained 26C5035r `krnl` IM4P and decoded
+kernelcollection before following native AppleProResHW 627 T6050 table
+pointers. It uses `lzfse==0.4.2`, validates all table records and pins the final
+APRI bytes; firmware rows are private Apple-derived data, never repository
+fixtures. T6050's APRI contract comes from
+[upstream native support](https://github.com/aurora-silicon/linux/commit/75eb2744e2bd41ce596972d2c188c6d93d2fb013).
+
+The media diagnostic patch targets kernel
+`8ab10100a4c1c944797e3fc8345589aff57777df`, with ANE observation informed by
+[79e1e9f88449f2ad8a9a97648f91df8c656157d2](https://github.com/aurora-silicon/linux/commit/79e1e9f88449f2ad8a9a97648f91df8c656157d2).
+It changes no accepted layout or firmware pin and is excluded from the deployed
+variant recipes. AVE's source qualification is
+[26A428-specific](https://github.com/aurora-silicon/linux/commit/55b7401a4b03bbedb487aae09770bafc0a17cefd),
+not a qualification of the retained 26C5035r image. A file digest or native
+table extraction does not qualify a boot/protocol ABI or hardware operation.
+
+
+
+### Touch ID userspace
+
+The local `libfprint-git` recipe pins libfprint 1.94.100 at
+[`80a4b5ec612892c5c056c48dddaa561452cf37ec`](https://gitlab.freedesktop.org/libfprint/libfprint/-/tree/80a4b5ec612892c5c056c48dddaa561452cf37ec),
+the complete Aurora patch series at
+[`a227a350d7ba2753e674b887c5f8304354732ee7`](https://github.com/aurora-silicon/aurora-sep-userspace/tree/a227a350d7ba2753e674b887c5f8304354732ee7/libfprint),
+and the selected kernel's `apple-sep.h`. Downloaded patches/header have BLAKE2
+checksums in the recipe. The Aurora driver accepts interface v4/v5, unlike
+the observed Omarchy v4-only build. Generated packages and signing keys remain
+private; epoch 2 deliberately holds this local build until an explicit return
+to a v5-capable repository package. Libfprint and the upstream patches retain
+their respective licenses; this integration does not relicense them.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

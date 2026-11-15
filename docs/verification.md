@@ -287,3 +287,99 @@ trial. No additional hardware check was run to reconfirm that report. This is
 one owner-observed recovery result, not a storage-state audit, repeated recovery
 qualification, or permission to enable Linux biometric enrollment/persistence.
 
+
+## Factory-data preparation verification — 2026-11-14
+
+On the running `touchid` kernel, without reboot or hardware enablement:
+
+- `test_speaker_tuning.py`: four targeted identity/build/vendor/read-only-input
+  regressions passed. Actual capture and verification produced a complete,
+  same-unit AID41/26C5035r package from retained macOS.
+- The distributable APFS-reader patch passed zero-fuzz application. The native
+  reader actually mounted unencrypted System/Preboot read-only; exact build
+  identification and real Apple source reads succeeded. Both mounts were closed.
+- Offline `aurora-speaker-tuning` from schema-compatible `54c911c` validated the
+  unmodified factory bundle and compiled a 1,668-byte, unit-calibrated Spp3 blob.
+  The **unvalidated 26C5035r/reference-25G83 warning remains**. No parity,
+  protection-runtime, loudness, hardware-sense or playback pass is claimed.
+- `test_bluetooth_sco_capture.py`: eighteen tests passed, including actual Linux
+  BPF filtering/truncation of synthetic socket datagrams. A one-second idle hci0
+  capture completed with zero control records. No profile or pairing changes,
+  voice retry or audio recording; monitor counters do not prove firmware TX.
+- `scripts/test-usb-power.py`: eighteen port/ALS tests passed, including new
+  guarded calibration installation/rollback paths. Only genuine factory HmCA
+  material was recovered; it is **not proven installable CalibrationData**.
+  No real calibration installation/AOP restart was performed.
+- `test_camera_firmware.py`: seven tests passed. The live private package check
+  accepted exact-build daemon/setfile hashes and current handoff provenance,
+  while reporting sensor identity unproven, not installed and hardware untouched.
+
+Private bundles, diagnostics and derived protection blobs remain excluded from
+publication. The installed speaker policy, masked safety daemon and working
+boot selection are unchanged. Preparation checks do not replace attended
+hardware qualification or macOS differential validation.
+
+
+### Encoder/ANE preparation checks
+
+- `scripts/test-media-firmware.py`: sixteen parser/native-pointer/private-input
+  regressions passed; no firmware was executed.
+- The exact retained-source ProRes candidate check passed: 2,880-byte APRI,
+  T6050, native rows 82/80/62/12, pinned final SHA-256. It remains uninstalled.
+- `kernel-j716s-media-handoff-diagnostics.patch` applies to the exact clean
+  kernel pin without fuzz. A disposable C host harness ran the **production**
+  KUnit cold-handoff fixture with the production range/admission predicates:
+  thirteen assertions passed, including rejection of 26C5035r geometry even
+  with a matching digest. The harness and binary were removed afterward.
+- The diagnostic patch has not had a full kernel build, real KUnit boot or
+  hardware boot. No claim of live ANE TEXT measurement is made from a retained
+  file hash. No AVE/ANE/ProRes engine, module rebind or boot selection ran.
+
+## Factory-data session integration
+
+Results from session
+`2026-11-15T03-50-42-200Z_01a1dd54-2718-7505-9803-008623374b39`
+are incorporated in the factory-data sections above, setup instructions and
+source provenance. The timestamp identifies the archive; the executed checks
+were recorded there as 2026-11-14. The integration consulted the parent and
+its MediaEngines, SensorsCamera and BluetoothVoice results without repeating
+hardware operations.
+
+The parent executed **63 targeted tests**: four speaker, eighteen Bluetooth
+capture, eighteen USB/power/ALS, seven camera and sixteen media cases. The
+production ANE handoff host fixture passed **13 additional assertions**, not
+thirteen additional unittest cases or a full KUnit boot. Real read-only macOS
+mounts, speaker collection/verification, offline Spp3 validation/compilation,
+camera and ProRes package checks, and a one-second idle Bluetooth metadata
+capture also completed. The source session's final release check verified
+**148 published files**; that is its historical inventory, not a count for
+this integration. No resulting local commit was evidenced in that session.
+
+No new speaker playback/protection runtime, encoder/ANE startup, camera capture,
+headset microphone, ALS operation, Touch ID enrollment/matching or PAM check
+was performed. The 26C5035r speaker differential warning, firmware acquisition
+guards and private-data exclusions remain. The existing detailed results are
+retained rather than counted as a second qualification run.
+
+## Touch ID enablement checkpoint — 2026-11-14
+
+- Live `uname -r`: `7.3.0-j716s-8ab10100a4c1-touchid`; platform reports ready.
+  The installed v4/v5-capable libfprint package is
+  `2:1.94.100.aurora.a227a35-1`. `fprintd-list` reports the enrolled finger.
+- Existing Quickshell journal records real fingerprint PAM authentication and
+  secure-session unlock at 22:17:26 through `omarchy-lock-fingerprint`.
+  This is executed surface evidence, not an inference from setup configuration.
+- Actual lock status reports fingerprint available and password PAM present;
+  sudo/polkit files have fingerprint, lid gating and password fallback. Those
+  two authentication surfaces and fallback execution were not separately tested.
+- A new 45-second `fprintd-verify` check timed out without a result. No retry,
+  re-enrollment or additional success is claimed. The earlier recorded lock
+  authentication is the matching proof.
+- No Hyprland configuration errors or failed system services were reported.
+  PipeWire exposes only Dummy Output as its sink; microphone sources remain,
+  and `speakersafetyd` is masked. No speaker or unqualified engine enablement,
+  kernel deployment, reboot or suspend was performed in this checkpoint.
+
+The archived factory-data tests above were not rerun here. Fingerprint reboot
+matching and macOS return after Linux enrollment are still unqualified.
+
