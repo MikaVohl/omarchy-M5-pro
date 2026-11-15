@@ -1,0 +1,56 @@
+From: Omarchy J716s bringup
+Subject: [PATCH] arm64: dts: apple: j716s: publish native ANE type metadata
+
+Base: 8ab10100a4c1c944797e3fc8345589aff57777df plus the full candidate's
+15 patches. Apply after kernel-j716s-ane-27_3.patch and the other candidate
+patches. Only the J716s board DT changes; no shared SoC or consumer fallback.
+
+The exact running J716s/T6050/26C5035r ADT /arm-io/ane0 has a non-placeholder
+ane-type cell 20 02 00 00 (little endian 0x220), compatible
+"ane,t8132exclave", pre-loaded 1 and __TEXT;__DATA segments. This matches
+the pinned kernel's ane_t6050_platform.ane_type = 0x220. The bound read-only
+ADT was read with aurora-adt-extract.py, SHA256
+cfef5935f35c412e006ae70229406b0eac51e830a175ca9b98fcdabe873389f5.
+The bound region digest and capture receipt are retained privately; no unit
+serial, raw ADT or per-boot identity receipt is included here.
+
+Why omitted: the pinned t6050-peripherals.dtsi documents type 0x220 in a
+comment but does not publish apple,ane-type. Aura
+54678354b70d64506408d9b157f85ac6065d194b src/kboot.c dt_set_ane_node
+validates the ADT preload and publishes reservations, memory-region-names
+and apple,firmware-iovas, not ane-type. The resulting live platform node
+therefore has valid reservation geometry but fails the cold reader's
+mandatory firmware-preloaded AND ane-type == soc->ane_type identity gate
+before it can select a bounded TEXT pin and read TEXT.
+
+Publish the native type in the J716s-only board override. This adds exactly
+one big-endian DT u32, apple,ane-type = <0x220>, on
+/soc/neural-processor@508000000. It changes no status, firmware layout,
+reservation, ownership or boot marker. In particular this is not evidence
+of cold boot or permission to acquire the ANE. Keep the boot-only
+ane_t6021.ane_observe_only=1 option. Missing/wrong identity, enabled no-map
+nonreusable reservations outside System RAM, admitted geometry/TEXT pin,
+raw-loader evidence, crash-kernel and hardware cold-state checks all remain
+mandatory. No DMA, start or hardware qualification is performed by this patch.
+
+Host regression (run by integration owner, not during patch preparation):
+python3 -B scripts/test-ane-type-metadata.py --kernel FRESH_PATCHED_SOURCE
+It executes the actual consumer with missing/wrong type and reservation,
+loader, TEXT, PMGR, crash and observe-only boundary cases, not source echoes.
+
+---
+diff --git a/arch/arm64/boot/dts/apple/t6050-j716s.dts b/arch/arm64/boot/dts/apple/t6050-j716s.dts
+--- a/arch/arm64/boot/dts/apple/t6050-j716s.dts
++++ b/arch/arm64/boot/dts/apple/t6050-j716s.dts
+@@ -79,6 +79,11 @@
+  */
+ #include "t6050-peripherals.dtsi"
+ 
++/* Native J716s ADT /arm-io/ane0 identity, not a cold-boot/ownership marker. */
++&ane0 {
++	apple,ane-type = <0x220>;
++};
++
+ /*
+  * PCIe port 0: the N1 (Wi-Fi and Bluetooth). Port 1 is the SD reader, not yet
+  * described. The registers, interrupt, DART streams and PERST# pin are the

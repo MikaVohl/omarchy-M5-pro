@@ -159,7 +159,7 @@ def sensor_delta(before, after, expected):
         "firmware-name": b"apple/mesacal-j716s.bin\0apple/msrk-j716s.bin\0"}
 
 
-def validate_dtb_delta(candidate):
+def validate_dtb_delta(candidate, ane_type_metadata=False):
     """Preserve the actual qualified tree, including its KIS safety disables."""
     before = payload.dtb_nodes((ESP / "aurora/root/t6050-j716s.dtb").read_bytes())
     after = payload.dtb_nodes(candidate)
@@ -177,12 +177,18 @@ def validate_dtb_delta(candidate):
     else:
         require(all(after[node].get("phandle") == properties.get("phandle") for node, properties in before.items()
                     if node in after), "discovery candidate renumbered phandles")
+    if ane_type_metadata:
+        ane = "/soc/neural-processor@508000000"
+        require(VARIANT == "sep-sensor" and ane in before and "apple,ane-type" not in before[ane],
+                "unexpected baseline for exact ANE metadata correction")
+        expected[ane]["apple,ane-type"] = cells(0x220)
     differing = sorted(node for node in expected.keys() | after.keys() if expected.get(node) != after.get(node))
     require(not differing, "unrelated or unsafe DT change: " + ", ".join(differing))
     require(after[SEP_NODE]["status"] == b"disabled\0", "SEP must await explicit module loading")
     if VARIANT == "sep-sensor":
-        print("Verified exact DT delta: SEP alias/mailbox/power plus the pinned sensor SPI/GPIO wiring; "
-              "remaining changes are path-matched phandle renumbering; qualified KIS topology unchanged.")
+        metadata = " plus exact native ANE type" if ane_type_metadata else ""
+        print("Verified exact DT delta: SEP alias/mailbox/power plus the pinned sensor SPI/GPIO wiring" + metadata +
+              "; remaining changes are path-matched phandle renumbering; qualified KIS topology unchanged.")
     else:
         require(after[SENSOR_SPI]["status"] == b"disabled\0", "sensor SPI must stay disabled")
         print("Verified exact DT delta: SEP alias, mailbox, always-on SEP power supplier; sensor and qualified KIS topology unchanged.")

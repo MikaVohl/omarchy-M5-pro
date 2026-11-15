@@ -39,9 +39,10 @@ DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE),
               "touchid-sco-spk": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE,
                                   candidate.VARIANTS["touchid-sco"]["release"]),
               "touchid-sco-spk-hfp": (candidate.VARIANTS["touchid-sco-spk"]["release"],),
-              "bringup-full": (candidate.VARIANTS["touchid-sco-spk-hfp"]["release"],)}
+              "bringup-full": (candidate.VARIANTS["touchid-sco-spk-hfp"]["release"],),
+              "bringup-ane-observe": (candidate.VARIANTS["bringup-full"]["release"],)}
 # Defaults a rollback may restore besides the baseline payload.
-PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco", "touchid-sco-spk", "touchid-sco-spk-hfp")
+PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco", "touchid-sco-spk", "touchid-sco-spk-hfp", "bringup-full")
 
 
 def select(variant):
@@ -154,7 +155,8 @@ def deploy(activate, baseline_config):
             sep_stage = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(sep_stage)
             sep_stage.select("sep-sensor")
-            sep_stage.validate_dtb_delta(next(data for name, data in files if name == PREFIX + "/t6050-j716s.dtb"))
+            sep_stage.validate_dtb_delta(next(data for name, data in files if name == PREFIX + "/t6050-j716s.dtb"),
+                                         ane_type_metadata=VARIANT == "bringup-ane-observe")
         needed = sum(len(data) for _, data in files) + 8 * 1024**2
         require(shutil.disk_usage("/boot").free >= needed, "insufficient ESP space; no retained files will be deleted")
         # Exercise the existing installed guard with the new helper before changing it.

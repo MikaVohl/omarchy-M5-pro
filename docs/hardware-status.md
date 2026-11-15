@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | Working `touchid-sco-spk-hfp` remains running; all 18 CPUs booted | Integrated `bringup-full` compiled, target-checked and selected for a later manual boot; runtime qualification pending |
+| Kernel | `7.3.0-j716s-8ab10100a4c1-bringup-full` booted; all 18 CPUs available | Boot binding passed; observation-only ANE metadata correction preparing |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -15,10 +15,10 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
-| Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
-| Video encode / ANE | Exact-build AVE compatibility and bounded ANE support compiled; real H17 addition HWX and driver sections prepared | No new encoder/ANE job; full candidate uses observation-only ANE identity measurement first; ProRes acquisition remains unqualified |
+| Video decode / Moonlight | H.264 prior streaming pass; current HEVC Main hardware decode produced 30 frames bit-identical to software | Limited streams; Main10, AV1, VP9, higher resolutions and long soak unqualified |
+| Video encode / ANE | Current AVE H.264/HEVC Main hardware encode passed 30-frame software-decode and pixel comparison per codec | ANE refused missing type metadata before TEXT reading; correction remains observation-only; ProRes acquisition unqualified |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
-| Audio | `touchid-sco-spk` booted; fresh silent wiring/native voicing/512-frame graph checks passed; protected Mac speaker tone heard by owner | Preview enabled with live supervisor; pause/death withdrawal observed; volume-sweep, acoustic/lifetime and repeated-boot certification remain unqualified |
+| Audio | Protected preview starts automatically with grant; prior Mac speaker tone owner-confirmed | Current graph verification refused one startup speaker xrun; cause unresolved, counters/gates not relaxed; no new speaker playback |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
@@ -899,4 +899,44 @@ LOAD sections from it. Compiler/HWX hashes, input/oracle/section bytes and
 dependency revisions are retained privately. This is preparation, not ANE
 execution; live firmware identity and actual LOAD/EXEC output proof still gate
 the hardware test. Temporary build/proof environments were stopped.
+
+## Full candidate postboot media qualification - 2026-11-15
+
+The owner booted `bringup-full`; boot binding passed, no system services failed,
+and the internal panel stayed 3456×2234/120 Hz. AVE recognized 26C5035r TEXT
+`0x158000`, CRC `c25b4ddb`, DATA `0x134000` and exposed its encoder. Missing
+`gst-plugins-good` and `gst-libav` were installed through the normal package
+interface; the J716s ownership guard ran without changing boot components.
+The dynamic encoder factory binds its device read-only, so the corrected
+recipe verifies that binding rather than attempting a property write.
+
+| Path | Frames | Pixel proof |
+| --- | --- | --- |
+| AVE H.264 Main, 3 B-frames | 30 | Software-decoded; worst frame/channel PSNR 63.75 dB against actual reference |
+| AVE HEVC Main, 3 B-frames | 30 | Software-decoded; worst frame/channel PSNR 65.31 dB against actual reference |
+| AVD HEVC Main decode | 30 | VA-API stateless backend selected `/dev/video12`; every decoded byte equals software |
+
+All paths completed and their inspected kernel windows had no new DART fault,
+timeout, SError, Oops or quarantine. Sources were synthetic 1920×1080 NV12,
+nominal 30 fps. This is a limited compatibility/pixel pass, not native extended
+ABI, elementary-stream timing, Main10, low-delay Main, all-content fidelity,
+concurrency, suspend or endurance qualification. Reference, encoded and decoded
+test data/logs remain private.
+
+Speaker kernel/hardware/voicing checks passed, but current complete graph
+verification refused one lifetime speaker ERR. Sense ERR is zero and refused
+speaker starts are zero. The recorded boot ordering does not prove an early
+ungranted-start cause; the first ERR increment/cause is not logged. No counter
+reset, verify relaxation, global PipeWire restart or speaker playback followed.
+
+ANE correctly stopped before TEXT reading: the live DT lacks `apple,ane-type`
+even though preload reservations/IOVAs are present. The bound exact-unit ADT
+proves non-placeholder little-endian `0x220`, `ane,t8132exclave`, pre-loaded 1.
+The pinned SoC DT documents but omits the property, and pinned Aura does not
+copy it. A J716s-only correction adds exactly big-endian `0x220` to that node;
+the strict DT validator permits only this extra property, not new status,
+layout, owner, GPIO or cold-boot markers. The new `bringup-ane-observe` variant
+retains the tested full stack and all observation-only/pin/reservation gates.
+Its source consumer checks and 78 candidate/7 speaker-evidence cases passed;
+kernel build is running. ANE identity is not measured and no job has executed.
 

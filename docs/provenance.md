@@ -235,6 +235,17 @@ effort patch is not selected while PMP/report startup is unresolved, and fan
 manual mode is not inferred from writable targets on another board. No private
 wake stack, J714s routing table or best-effort camera privacy policy is imported.
 
+### Exact ANE type metadata
+
+The bound native J716s ADT provides non-placeholder little-endian type 0x220.
+The pinned SoC DT documents it but omits the Linux property, and pinned Aura
+copies preload reservations/IOVAs without the type. The J716s-only metadata
+patch publishes exactly one big-endian u32; it changes no cold marker, owner,
+clock, reset, reservation or GPIO. Kernel identity checks remain mandatory,
+and observation-only startup remains required. Per-boot unit digests/receipts
+stay private. Consumer checks cover missing, wrong and unreadable metadata
+before TEXT access and preserve the existing reservation/pin/cold-state gates.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

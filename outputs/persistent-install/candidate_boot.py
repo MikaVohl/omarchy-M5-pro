@@ -45,7 +45,8 @@ BLUETOOTH_CONFIG = frozenset({"CONFIG_BT_BREDR", "CONFIG_BT_LE", "CONFIG_BT_RFCO
 CONFIG_DELTA = BLUETOOTH_CONFIG | {"CONFIG_BT_LE_L2CAP_ECRED"}
 TOUCHID_RELEASE = BASELINE_RELEASE + "-touchid"
 FULL_PARAMETERS = {"ane_t6021.ane_observe_only": "1"}
-TOUCHID_VARIANTS = frozenset({"touchid", "touchid-sco", "touchid-sco-spk", "touchid-sco-spk-hfp", "bringup-full"})
+OBSERVATION_VARIANTS = frozenset({"bringup-full", "bringup-ane-observe"})
+TOUCHID_VARIANTS = frozenset({"touchid", "touchid-sco", "touchid-sco-spk", "touchid-sco-spk-hfp", "bringup-full", "bringup-ane-observe"})
 SEP_SENSOR_PATCH_SHA256 = "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5"
 # Variants that carry the Bluetooth config delta (and its two configs on the ESP).
 CONFIG_VARIANTS = frozenset({"bringup", *TOUCHID_VARIANTS})
@@ -117,6 +118,24 @@ VARIANTS = {
         "kernel-j716s-ane-27_3.patch": "cabf8cfdd956d55646c20be0f09d84b2e8c42bb1aff5bd9a8574390dee42c34b",
         "kernel-j716s-peripherals.patch": "e49980322d7b7b5aeb4896b3cba2a77586f01309a8b015cb12f010c1ff7893d7",
         "kernel-g17-retained-pool-pages.patch": "d97cf80e7f635a731e31d54f1d200d19c7a5993ee95f7b28a45d4c542857ac79"}},
+    "bringup-ane-observe": {"release": BASELINE_RELEASE + "-bringup-ane-observe", "patches": {
+        "kernel-j716s-open-wifi.patch": "93fe93402d2631475792635b1c3e51b187a94fe15b8518de3fcc09dd84c3f75c",
+        "kernel-j716s-bluetooth.patch": "d4ec8a90431108c3887eb2dd99b29d11aaeca78b92fcaf2a5dccf32d9ff2229b",
+        "kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce",
+        "kernel-j716s-sep-probe.patch": "dee143ac4c83be7f96157a36ada4329f38c032e9c3441298f690f4f8f1abe8b4",
+        "kernel-j716s-sep-sensor.patch": "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5",
+        "kernel-j716s-touchid.patch": "43d0bd360349b123270766c3551983121c453be10581cbe8ef50d610e0f29486",
+        "kernel-j716s-bluetooth-sco.patch": "573c10d0d5212c738823d3423ea0399637ff4227bfa4fa8fbfafca81c64cb87d",
+        "kernel-j716s-prores-dma-ownership.patch": "be5b22ad12046c8013182c21d58fc5ded9f481d71a53401c05cd60a3599f1483",
+        "kernel-j716s-v2-operating-ceiling.patch": "8f21f0408e4bf35a9cfa950667685427c86b728d8d8294e21e21f78f254f5846",
+        "kernel-j716s-legacy-hfp-setup.patch": "d0b9e000357748e554cba016526dfc524cf6a018516be5654dd6c76deae21fdb",
+        "kernel-j716s-media-handoff-diagnostics.patch": "a1004cc270038fde549f877fe45e0619e16dcea884a99f78cf816f2fa23981ca",
+        "kernel-j716s-ave-27_3.patch": "40e11b1d9cf10741debddf40536759ac5cca5da5f429c8ce7fbb302c4b238310",
+        "kernel-j716s-ane-27_3.patch": "cabf8cfdd956d55646c20be0f09d84b2e8c42bb1aff5bd9a8574390dee42c34b",
+        "kernel-j716s-peripherals.patch": "e49980322d7b7b5aeb4896b3cba2a77586f01309a8b015cb12f010c1ff7893d7",
+        "kernel-g17-retained-pool-pages.patch": "d97cf80e7f635a731e31d54f1d200d19c7a5993ee95f7b28a45d4c542857ac79",
+        "kernel-j716s-ane-type-metadata.patch": "a43a0d877f03bd3b22727c1f64a9660c5f468064cfc594eec69a2ba2a5bee8f2",
+    }},
 }
 
 
@@ -417,7 +436,7 @@ def validate_running_kernel(root, baseline_release, identity, deployment, cmdlin
     if variant in ONE_SHOT_PARAMETERS:
         require(all(cmdline.get(key) == value for key, value in ONE_SHOT_PARAMETERS[variant].items()),
                 "SEP trial requires safe command-line flags")
-    if variant == "bringup-full":
+    if variant in OBSERVATION_VARIANTS:
         require(all(cmdline.get(key) == value for key, value in FULL_PARAMETERS.items()),
                 "full bringup requires ANE observation-only admission")
     if variant == "sep-sensor":

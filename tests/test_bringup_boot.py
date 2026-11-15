@@ -214,6 +214,17 @@ class FullBringupBootTests(LegacyHfpSetupBootTests):
                     cmdline, running_release=candidate.VARIANTS[self.VARIANT]["release"])
 
 
+class AneTypeObservationBootTests(FullBringupBootTests):
+    VARIANT = "bringup-ane-observe"
+
+    def test_full_build_cannot_claim_exact_type_metadata(self):
+        f = self.fixture
+        f.receipt["build_manifest"]["patches"] = copy.deepcopy(candidate.VARIANTS["bringup-full"]["patches"])
+        f.store_receipt()
+        with self.assertRaisesRegex(RuntimeError, "build pins"):
+            self.verify()
+
+
 class BringupPublicationTests(unittest.TestCase):
     def test_validation_failure_restores_previous_default_not_baseline(self):
         with tempfile.TemporaryDirectory() as temporary:

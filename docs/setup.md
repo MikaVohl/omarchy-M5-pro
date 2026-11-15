@@ -924,6 +924,35 @@ H17 compiler and ABI-3 runner; preparing inputs is not job proof. Hardware
 attachments, microphones/camera and stress/fan operations are owner-attended,
 announced and stopped on the first error; keep private samples out of publication.
 
+## Booted media compatibility checks and ANE metadata
+
+The AVE postboot recipe requires the standard plugins:
+
+```sh
+omarchy pkg add gst-plugins-good gst-libav
+python3 -B scripts/test-ave-27_3.py --postboot-recipe
+```
+
+The recipe verifies the dynamic encoder factory's read-only device binding,
+captures actual reference pixels, and checks every decoded frame/channel, not
+merely the file size. It uses FFmpeg only for CPU comparison, not its unsupported
+V4L2 Main encoder. The current local H.264/HEVC compatibility sessions passed;
+do not extrapolate to other profiles or endurance.
+
+`bringup-ane-observe` adds exactly the native J716s `apple,ane-type=0x220` that
+the pinned DT/loader omit. Missing/wrong type still fails before TEXT access.
+The property is not a cold-ownership marker and cannot authorize acquisition.
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-ane-observe
+sudo python3 -B scripts/deploy-bringup.py --variant bringup-ane-observe
+```
+
+The full sensor/KIS DT check permits only this additional exact cell; all
+observation variants require `ane_t6021.ane_observe_only=1`. Preserve the current
+tested full candidate for rollback. A later manual boot must first produce the
+recognized-reservation TEXT digest; engine/job proof remains independently gated.
+
 ## Source maintenance and checks
 
 ```sh

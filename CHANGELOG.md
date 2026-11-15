@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Hardware video encoding and HEVC decoding - 2026-11-15
+
+- Boot the integrated kernel and qualify 30-frame AVE H.264/HEVC Main encode with software decode and reference PSNR, plus bit-identical 30-frame AVD HEVC Main decode.
+- Install required GStreamer plugins and correct read-only dynamic encoder device binding; compare actual reference pixels rather than only output lengths.
+- Record and preserve the speaker startup xrun refusal without relaxing checks or resetting counters.
+- Identify missing ANE type metadata from the actual bound ADT; prepare a J716s-only exact-property observation variant with existing identity/ownership gates preserved.
+
 ## Broad guarded bringup candidate - 2026-11-15
 
 - Prepare exact-build AVE compatibility admission and ANE build/IPC support with mandatory observation-only startup and firmware-requested parser bounds.

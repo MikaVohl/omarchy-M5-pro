@@ -293,6 +293,15 @@ gst-inspect-1.0 v4l2h264enc >/dev/null
 gst-inspect-1.0 v4l2h265enc >/dev/null
 gst-inspect-1.0 avdec_h264 >/dev/null
 gst-inspect-1.0 avdec_h265 >/dev/null
+factory_device() {
+    LC_ALL=C gst-inspect-1.0 "$1" | awk '
+        /^  device[[:space:]]*:/ { device=1; next }
+        device && /Default: / { sub(/^.*Default: "/, ""); sub(/".*$/, ""); print; exit }
+    '
+}
+# Dynamic encoder factories bind their device at registration; it is read-only.
+[ "$(factory_device v4l2h264enc)" = "$AVE_DEVICE" ]
+[ "$(factory_device v4l2h265enc)" = "$AVE_DEVICE" ]
 EVIDENCE=$(mktemp -d "$HOME/ave-compat-26C5035r-XXXXXXXX")
 START=$(date --iso-8601=seconds)
 trap 'journalctl -k --since="$START" --no-pager > "$EVIDENCE/kernel.txt"' EXIT
@@ -305,8 +314,9 @@ check_kernel() {
 }
 timeout --foreground 120s gst-launch-1.0 -e \
     videotestsrc pattern=ball num-buffers=30 ! \
-    video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! \
-    v4l2h264enc device="$AVE_DEVICE" \
+    video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! tee name=t \
+    t. ! queue ! filesink async=false location="$EVIDENCE/h264-reference.nv12" \
+    t. ! queue ! v4l2h264enc \
     extra-controls="controls,video_bitrate=4000000,video_b_frames=3,video_gop_size=30" ! \
     video/x-h264,profile=main ! h264parse ! filesink location="$EVIDENCE/compat.h264" \
     2>&1 | tee "$EVIDENCE/h264-encode.txt"
@@ -318,8 +328,9 @@ timeout --foreground 120s gst-launch-1.0 -e \
 check_kernel
 timeout --foreground 120s gst-launch-1.0 -e \
     videotestsrc pattern=ball num-buffers=30 ! \
-    video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! \
-    v4l2h265enc device="$AVE_DEVICE" \
+    video/x-raw,format=NV12,width=1920,height=1080,framerate=30/1 ! tee name=t \
+    t. ! queue ! filesink async=false location="$EVIDENCE/hevc-reference.nv12" \
+    t. ! queue ! v4l2h265enc \
     extra-controls="controls,video_bitrate=4000000,video_b_frames=3,video_gop_size=30" ! \
     video/x-h265,profile=main ! h265parse ! filesink location="$EVIDENCE/compat.hevc" \
     2>&1 | tee "$EVIDENCE/hevc-encode.txt"
@@ -329,9 +340,31 @@ timeout --foreground 120s gst-launch-1.0 -e \
     filesink location="$EVIDENCE/hevc-decoded.nv12" 2>&1 | tee "$EVIDENCE/hevc-decode.txt"
 [ "$(stat -c %s "$EVIDENCE/hevc-decoded.nv12")" = 93312000 ]
 check_kernel
-echo "30 frames encoded and software-decoded per codec; evidence: $EVIDENCE"
+# FFmpeg is used only for CPU comparison, never its unsupported V4L2 encoder.
+for codec in h264 hevc; do
+    [ "$(stat -c %s "$EVIDENCE/$codec-reference.nv12")" = 93312000 ]
+    timeout --foreground 30s ffmpeg -hide_banner -loglevel error \
+        -f rawvideo -pixel_format nv12 -video_size 1920x1080 -framerate 30 \
+        -i "$EVIDENCE/$codec-reference.nv12" \
+        -f rawvideo -pixel_format nv12 -video_size 1920x1080 -framerate 30 \
+        -i "$EVIDENCE/$codec-decoded.nv12" \
+        -lavfi "psnr=stats_file=$EVIDENCE/$codec-psnr.txt" -frames:v 30 -f null -
+done
+python3 - "$EVIDENCE" <<'PY'
+from pathlib import Path
+import math, sys
+root = Path(sys.argv[1])
+for codec in ("h264", "hevc"):
+    rows = [dict(field.split(":", 1) for field in line.split())
+            for line in (root / (codec + "-psnr.txt")).read_text().splitlines()]
+    assert len(rows) == 30 and [int(row["n"]) for row in rows] == list(range(1, 31))
+    values = [float(row[key]) for row in rows for key in ("psnr_avg", "psnr_y", "psnr_u", "psnr_v")]
+    assert all(not math.isnan(value) and value >= 35 for value in values), (codec, min(values))
+    print(codec, "30 decoded frames, minimum per-frame/channel PSNR", min(values), "dB")
+PY
+echo "30 frames hardware-encoded and software-decoded per codec, pixel comparison passed; evidence: $EVIDENCE"
 # This proves only one 1080p/30 NV12 Main compatibility session per codec,
-# not pixel fidelity, native ABI, Main10, low delay, suspend or concurrency.
+# not native ABI, Main10, low delay, suspend or concurrency.
 '''
 
 

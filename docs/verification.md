@@ -605,3 +605,23 @@ camera job is claimed.
   driver section extraction passed with IDs 5/6 -> 4 and one task's BAR bindings.
   All preparation artifacts are privately hash-bound; no ANE execution claimed.
 
+## Booted full candidate media results - 2026-11-15
+
+- Boot binding/system-service checks passed; internal panel retained full mode.
+  AVE recognized the exact firmware and exposed a video encoder.
+- Installed missing standard GStreamer encoder/software-decoder plugins; no
+  boot package replacement. Dynamic factory device binding verified explicitly.
+- Real H.264 and HEVC Main hardware encode completed, 30 frames each. Software
+  decode/reference checks passed on every frame/channel: minimum PSNR 63.75
+  and 65.31 dB respectively, with clean inspected kernel windows.
+- AVD HEVC Main via stateless VA-API completed 30 frames, all bytes equal to
+  software output. No new kernel errors in that test window. No codec fallback
+  or new global graphics/sandbox configuration was used.
+- Current speaker graph verify refused lifetime speaker ERR 1; sense ERR 0 and
+  refused starts 0. Seven boot-evidence parser cases passed. No source startup
+  fix is justified, and no counters/qualification checks were bypassed.
+- ANE failed before TEXT mapping because DT type metadata is absent. Exact live
+  ADT proves type 0x220; J716s-only metadata patch applies without fuzz and its
+  production consumer gate checks passed. 78 candidate authorization cases
+  passed with observation-only mode required. No live pin or ANE job claimed.
+
