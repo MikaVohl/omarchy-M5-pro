@@ -596,3 +596,12 @@ camera job is claimed.
   All ownership/release assertions and negative controls then passed. Full
   kernel compilation remains a separate required check.
 
+- Full integrated kernel Image/modules build completed. Exact target patch,
+  config, sensor/KIS DT, guard, partition and ESP checks passed; owner-authorized
+  persistent selection passed and preserved the working default/runtime,
+  modules and baseline/rescue. No reboot or new hardware job.
+- Pinned H17 compiler build and actual HWX emission passed after resolving the
+  container's missing `which` utility. One 49,152-byte HWX was emitted; production
+  driver section extraction passed with IDs 5/6 -> 4 and one task's BAR bindings.
+  All preparation artifacts are privately hash-bound; no ANE execution claimed.
+

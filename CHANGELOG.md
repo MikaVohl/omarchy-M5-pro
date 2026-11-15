@@ -8,6 +8,8 @@
 - Strengthen private native camera/voice inspection and unit-bound Bluetooth acquisition; retain hardware refusal where takeover, privacy or routing contracts remain unresolved.
 - Record proved 18-core thermal effort mapping without activating unresolved PMP/report or manual fan control.
 - Archive unreferenced ESP diagnostics with owner authorization and hash readback; preserve boot/rescue dependencies and record microphone-array data flow without speech-quality claims.
+- Complete the integrated Image/modules build and exact target checks; select the candidate for a later owner-issued boot with the working default/runtime and rescue preserved.
+- Build the pinned open H17 compiler and emit a real addition HWX plus driver LOAD sections; retain private preparation hashes without claiming ANE execution.
 
 ## Legacy HFP hardware results - 2026-11-15
 

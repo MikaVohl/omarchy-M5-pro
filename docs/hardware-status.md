@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | `7.3.0-j716s-8ab10100a4c1-touchid-sco-spk-hfp`; all 18 CPUs booted | Isolated full bringup candidate preparing; newly generated module signing keys change build bytes |
+| Kernel | Working `touchid-sco-spk-hfp` remains running; all 18 CPUs booted | Integrated `bringup-full` compiled, target-checked and selected for a later manual boot; runtime qualification pending |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -16,7 +16,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
-| Video encode / ANE | Exact-build AVE compatibility and bounded ANE build/IPC ports prepared; private firmware checked | No new engine startup; ANE live TEXT identity must first be measured in observation-only mode; ProRes acquisition still unqualified |
+| Video encode / ANE | Exact-build AVE compatibility and bounded ANE support compiled; real H17 addition HWX and driver sections prepared | No new encoder/ANE job; full candidate uses observation-only ANE identity measurement first; ProRes acquisition remains unqualified |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
 | Audio | `touchid-sco-spk` booted; fresh silent wiring/native voicing/512-frame graph checks passed; protected Mac speaker tone heard by owner | Preview enabled with live supervisor; pause/death withdrawal observed; volume-sweep, acoustic/lifetime and repeated-boot certification remain unqualified |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
@@ -878,4 +878,25 @@ temporary listening gain only and succeeded. The owner was not speaking, so
 this is ambient data-flow evidence, not intelligibility/calibration proof.
 Buffers were deleted; no further recording/playback or routing changes while
 the owner listens to AirPods music in a cafe.
+
+### Full kernel build, selection and H17 workload preparation
+
+The integrated kernel Image/modules build completed with all 15 selected
+patches and unchanged config/sensor/KIS DT contracts. Target preflight and
+owner-authorized persistent activation passed; `bringup-full` is the next
+Linux default. The current HFP/speaker payload, runtime and module tree and
+baseline/rescue were preserved. No reboot, audio routing change or new engine
+job occurred during selection. The ANE boot option remains observation-only.
+
+The pinned open H17 compiler (`36feecaa7476968f72feb064c0f389a5b724a85b`) and
+pinned GNUstep dependencies built in an isolated environment. Initial manpage
+installation failed because the upstream recipe invokes `which gzip` and the
+image lacked `which`; adding that dependency completed installation without
+rebuilding the already installed Objective-C runtime or suppressing checks.
+The real compiler emitted one 49,152-byte addition HWX. The production ABI-3
+section extractor derived input IDs 5/6, output ID 4, BAR slots 6/7/8 and four
+LOAD sections from it. Compiler/HWX hashes, input/oracle/section bytes and
+dependency revisions are retained privately. This is preparation, not ANE
+execution; live firmware identity and actual LOAD/EXEC output proof still gate
+the hardware test. Temporary build/proof environments were stopped.
 
