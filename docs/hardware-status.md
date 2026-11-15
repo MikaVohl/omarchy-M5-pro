@@ -22,7 +22,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Not qualified | No claim of support |
-| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms. Sensor-auth candidate built, not yet staged or booted | No sensor authentication observed; no enrollment, matching or persistent biometric support |
+| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms. Same-unit sensor material prepared; sensor-auth candidate staged, not yet booted | No sensor authentication observed; no enrollment, matching or persistent biometric support |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
 The opt-in open-network Wi-Fi kernel
@@ -277,4 +277,20 @@ After the SEP discovery experiment, the owner reported that macOS and Touch ID
 work normally. This records one successful owner-observed return, not an
 independent biometric/storage audit or repeated recovery campaign. It does not
 qualify Linux sensor authentication, enrollment, matching or persistent writes.
+
+### Second discovery boot and sensor material — 2026-11-14
+
+A second armed cold boot selected `-sep-probe` without loading `apple_sep`. Aura
+forwarded `local-policy-manifest` (2,898 bytes) and `iboot-manifest` (9,025
+bytes) under the SEP node; no failed services. On that boot the same-unit factory
+package was prepared read-only from the iBootSystemContainer. The unit factory
+seal is an IM4M **version 2** (10,989 bytes); the local policy and both original
+FSC2/MSRk image manifests are version 0. Preparation now admits version 2 only
+for the unit seal. The seal binds board, unit serial and both payload digests.
+The resulting containers are 133,821 (FSC2) and 14,242 (MSRk) bytes; Apple
+signature validity is untested until the enclave sees them.
+
+The `sep-sensor` candidate was then staged unarmed. The ESP needed room: an
+unreferenced 203 MB `aurora/desktop-probe-20261113.tar.gz` was moved, hash-verified,
+to `/var/lib/j716s/esp-archive/`. No sensor operation has run.
 

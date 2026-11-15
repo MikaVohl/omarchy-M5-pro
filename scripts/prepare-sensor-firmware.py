@@ -162,7 +162,13 @@ def integer_property(properties, name, expected=None):
     return number
 
 
-def strict_manifest(data, factory, extractor):
+# Observed on J716s: the unit factory seal (seal-*) is IM4M version 2; the local
+# policy and each record's original image manifest are version 0.
+MANIFEST_VERSIONS = (b"\x00",)
+SEAL_VERSIONS = (b"\x00", b"\x02")
+
+
+def strict_manifest(data, factory, extractor, versions=MANIFEST_VERSIONS):
     """Require bounded DER and real signature/certificate *structure*, not trust."""
     properties = factory["manifest"](data)
     tree = extractor["TLV"](data, 0, allow_high_tag=True)
@@ -172,7 +178,7 @@ def strict_manifest(data, factory, extractor):
     der = factory["DER"](data)
     _, _, start, end = der.whole()
     top = der.children(start, end, 1)
-    if data[top[1][3]:top[1][4]] != b"\x00":
+    if data[top[1][3]:top[1][4]] not in versions:
         raise Refused("unsupported IM4M version")
     signature = data[top[3][3]:top[3][4]]
     if not 64 <= len(signature) <= 4096:
@@ -346,7 +352,7 @@ def validate_container(data, kind, identity, factory, extractor):
     if not 0 < len(image) <= 4 * 1024 * 1024:
         raise Refused("embedded IMG4 exceeds the pinned 4MiB source limit")
     payload, seal = factory["image"](image, kind)
-    properties = strict_manifest(seal, factory, extractor)
+    properties = strict_manifest(seal, factory, extractor, SEAL_VERSIONS)
     manp = properties.get(b"MANP", {})
     integer_property(manp, b"BORD", BOARD)
     for field, wanted in ((b"CHIP", identity[0]), (b"ECID", identity[1])):
@@ -379,7 +385,7 @@ def prepare_records(records, identity, factory, extractor):
         raise Refused("factory cache must contain exactly one same-unit seal")
     if len(records[seals[0]]) > factory["SOURCE_LIMIT"]:
         raise Refused("factory seal exceeds the pinned 4MiB source limit")
-    seal_properties = strict_manifest(records[seals[0]], factory, extractor)
+    seal_properties = strict_manifest(records[seals[0]], factory, extractor, SEAL_VERSIONS)
     integer_property(seal_properties.get(b"MANP", {}), b"BORD", BOARD)
     # The upstream seal filename binds CHIP/ECID even if its MANP omits them.
     for field, wanted in ((b"CHIP", identity[0]), (b"ECID", identity[1])):

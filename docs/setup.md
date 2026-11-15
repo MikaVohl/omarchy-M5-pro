@@ -534,6 +534,9 @@ every created file on failure. Arming, cancellation and the attended cold boot
 follow the discovery procedure with `--variant sep-sensor`. Persistent selection
 remains forbidden.
 
+The ESP is 476 MB; staging refuses without about 32 MB free and never deletes files.
+Move unreferenced archives off the ESP first.
+
 ## Source maintenance and checks
 
 ```sh

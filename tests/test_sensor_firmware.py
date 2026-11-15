@@ -43,13 +43,13 @@ def certificate():
     return fx.der(0x30, tbs + algorithm + fx.der(0x03, b"\x00" + b"s" * 64))
 
 
-def manifest(objects, *, signature=b"s" * 256, certificates=None, duplicate=None):
+def manifest(objects, *, signature=b"s" * 256, certificates=None, duplicate=None, version=0):
     body = b"".join(fx.private(name, fx.der(0x31, b"".join(fx.private(key, value)
                       for key, value in props.items()))) for name, props in objects.items())
     if duplicate is not None:
         body += fx.private(duplicate, fx.der(0x31, b""))
     certs = certificate() if certificates is None else certificates
-    return fx.der(0x30, fx.text(b"IM4M") + fx.integer(0)
+    return fx.der(0x30, fx.text(b"IM4M") + fx.integer(version)
                   + fx.der(0x31, fx.private(b"MANB", fx.der(0x31, body)))
                   + fx.octets(signature) + fx.der(0x30, certs))
 
@@ -62,12 +62,13 @@ def seal(*, identity=IDENTITY, board=sensor.BOARD, cal=CAL, root=ROOT, **options
                      b"MSRk": {b"DGST": fx.octets(hashlib.sha384(root).digest())}}, **options)
 
 
-def records(*, identity=IDENTITY, board=sensor.BOARD, cal=CAL, root=ROOT):
+def records(*, identity=IDENTITY, board=sensor.BOARD, cal=CAL, root=ROOT, seal_version=0, original_version=0):
     chip, ecid, _ = identity
-    original = manifest({b"MANP": {b"srvn": fx.octets(b"\x01")}})
+    original = manifest({b"MANP": {b"srvn": fx.octets(b"\x01")}}, version=original_version)
     return {f"FSC2-{SENSOR}": fx.img4(cal, original),
             f"MSRk-{SENSOR}": fx.img4(root, original),
-            f"seal-{chip:08X}-{ecid:016X}": seal(identity=identity, board=board, cal=cal, root=root),
+            f"seal-{chip:08X}-{ecid:016X}": seal(identity=identity, board=board, cal=cal, root=root,
+                                                  version=seal_version),
             "trustobject-current": TRUST,
             "trustobject-" + hashlib.sha256(TRUST).hexdigest().upper(): TRUST}
 
@@ -159,6 +160,14 @@ class FactoryTests(unittest.TestCase):
         serialized = json.dumps(evidence)
         self.assertNotIn(IDENTITY[2].decode(), serialized)
         self.assertNotIn(SENSOR, serialized)
+
+    def test_observed_version_two_unit_seal_is_admitted_but_not_elsewhere(self):
+        outputs, _ = sensor.prepare_records(records(seal_version=2), IDENTITY, FACTORY, EXTRACTOR)
+        for name, kind in sensor.NAMES.items():
+            sensor.validate_container(outputs[name], kind, IDENTITY, FACTORY, EXTRACTOR)
+        for options in ({"seal_version": 1}, {"seal_version": 3}, {"original_version": 2}):
+            with self.subTest(options=options):
+                self.assert_refused(lambda: sensor.prepare_records(records(**options), IDENTITY, FACTORY, EXTRACTOR))
 
     def test_other_board_chip_unit_serial_and_mixed_sensor_are_refused(self):
         for name, files in {
