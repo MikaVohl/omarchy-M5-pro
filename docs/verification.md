@@ -691,3 +691,26 @@ camera job is claimed.
   lanes; empty/truncated/oversized results; allocation-sized copy rejection;
   poison, no-op and last-lane corruption. General models remain unqualified.
 
+## GPUI desktop compatibility diagnosis and launcher verification - 2026-11-15
+
+- Native Vulkan inspection identified Apple M5 Pro G17S Borealis, API 1.4.363,
+  conformance version 0.0.0.0, valid BGRA8 presentation formats and advertised
+  dual-source blending. Exact wgpu-hal 29.0.4 source hides this non-MoltenVK
+  noncompliant adapter with default instance flags; no guard was bypassed.
+- A targeted DiskTree native diagnostic emitted its generic adapter/surface
+  rejection. Superwhisper's native diagnostic exposed the separate GL limit
+  failure (15 inter-stage shader variables requested, 14 allowed), followed by
+  a zink software retry with no CPU Vulkan device and terminal fallback.
+- Explicit llvmpipe rendered DiskTree's private one-file directory and the
+  Superwhisper configuration GUI. Screenshots were inspected, not merely
+  process liveness/window mapping. Herdr's existing CPU GL path was retained.
+- After installing user-local desktop overrides, Gio resolved both normal
+  desktop IDs to `~/.local/share/applications/`. Actual GIO launches produced
+  owned native Wayland DiskTree and Superwhisper windows; final pixel captures
+  showed the file tile/detail controls and graphical configuration controls.
+  No whole-disk scan, file removal, settings change or dictation was exercised.
+- Final process inspection retained the original Herdr GUI/core and
+  Superwhisper daemon/ASR/vocabulary worker PIDs and start times. Compositor
+  zink/private Vulkan selection remained intact. Only owned diagnostic GUIs
+  were closed. The workaround is CPU GL, not general native GPU qualification.
+

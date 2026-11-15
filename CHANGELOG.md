@@ -1,6 +1,12 @@
 # Changelog
 
 
+## Desktop application graphics compatibility - 2026-11-15
+
+- Identify wgpu's rejection of the nonconformant Borealis Vulkan adapter and Superwhisper's native zink GL inter-stage limit mismatch.
+- Restore DiskTree and Superwhisper GUI launching with user-local, app-scoped llvmpipe overrides; retain Herdr's existing software launcher and active sessions.
+- Preserve native compositor graphics, Vulkan inference workers and admission guards; classify the GUI workaround as CPU rendering, not restored native GPU support.
+
 ## Guarded ANE startup and real H17 execution - 2026-11-15
 
 - Boot the cross-built guarded acquisition kernel with live firmware identity, cold ownership and ordered DART/DAPF checks intact.

@@ -9,7 +9,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Kernel | `bringup-ane-start` booted; installed boot binding passed | Remote-built acquisition candidate is live; single-job ANE qualification, not sustained stability |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
-| GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
+| GPU | Native G17S rendering and Vulkan/zink desktop; one scheduling-timeout recovery observed; GPUI applications render with app-scoped llvmpipe | Borealis conformance 0.0.0.0 is hidden by wgpu; native GL GUI limits, API conformance and sustained stability remain open |
 | Panel | Native DCP, full-notch 3456×2234; current observation boot at 60 Hz, 120 Hz offered | No display setting changed during observation; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
@@ -36,6 +36,47 @@ subsequent normal-default boot has yet been observed.
 See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 
 Obtain and verify a current backup before partitioning or deployment.
+
+## Desktop application rendering qualification - 2026-11-15
+
+The compositor and user-service graphics environment still selects native
+`/opt/mesa-j716s`, zink and the Apple M5 Pro G17S Borealis Vulkan ICD. Native
+inspection reported Vulkan conformance version `0.0.0.0`. The installed
+[wgpu-hal 29.0.4 adapter gate](https://docs.rs/crate/wgpu-hal/29.0.4/source/src/vulkan/adapter.rs)
+hides a non-MoltenVK adapter whose conformance major is zero unless the
+application explicitly permits noncompliant adapters. The GPUI instance uses
+default flags, not environment-derived flags. No conformance spoof, Vulkan
+admission bypass, GPU feature claim or compositor setting was applied.
+
+Superwhisper's native diagnostic additionally exposed the GL device-creation
+failure: `max_inter_stage_shader_variables` requested 15, but zink exposed 14.
+Its built-in software retry left the inherited zink override in place, then
+reported `ZINK: CPU device requested but none found!` and fell back to TUI.
+The older DiskTree diagnostic swallowed adapter-specific log messages and
+reported only that no adapter could configure the surface; its exact GL
+rejection was not separately logged. Missing dual-source blending was not
+established: native Vulkan inspection advertised that feature as supported.
+
+| Application | Demonstrated rendering path | Change |
+| --- | --- | --- |
+| Herdr local GUI, vendored GPUI-pre 0.3.8 / wgpu 29.0.4 | Existing native Wayland window with llvmpipe CPU GL | Existing software launcher retained; live terminals/core sessions not restarted |
+| DiskTree 0.11.0-3, GPUI-pre 0.3.6 / wgpu 29.0.4 | Native Wayland software GL; a small private directory rendered its file tile, labels and controls | User-local desktop override selects llvmpipe for both normal and whole-disk actions; whole-disk scan was not exercised |
+| Superwhisper 1.3.1 settings GUI, GPUI / wgpu 29.0.4 | Native Wayland llvmpipe GL, configuration controls rendered | User-local desktop override launches graphical `superwhisper settings`, not Foot |
+
+The new overrides use `LIBGL_ALWAYS_SOFTWARE=1`,
+`MESA_LOADER_DRIVER_OVERRIDE=llvmpipe` and `GALLIUM_DRIVER=llvmpipe` on the
+application launch only. Packaged desktop entries and global GPU configuration
+remain unchanged. This restores software-rendered GUIs, not GPU acceleration
+for these apps. Existing Superwhisper daemon/Vulkan inference processes remain
+separate; no dictation, model, audio-route or service change was requested.
+Herdr's software environment is also inherited by this terminal, so GL
+programs launched from that terminal may use CPU rendering even while the
+compositor remains GPU accelerated.
+
+Earlier bounded DiskTree probes did not establish a qualified software path;
+the explicit llvmpipe selection and rendered result here do. Native GPUI
+rendering still needs real driver conformance/limit reconciliation and
+application-level qualification.
 
 ## Guarded startup and first real H17 addition - 2026-11-15
 
