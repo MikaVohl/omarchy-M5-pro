@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | `bringup-ane-observe` remains running; boot binding passed | Native cross-built `bringup-ane-start` passed local/target checks and was selected for later manual boot; acquisition untested |
+| Kernel | `bringup-ane-start` booted; installed boot binding passed | Remote-built acquisition candidate is live; single-job ANE qualification, not sustained stability |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -16,7 +16,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | H.264 prior streaming pass; current HEVC Main hardware decode produced 30 frames bit-identical to software | Limited streams; Main10, AV1, VP9, higher resolutions and long soak unqualified |
-| Video encode / ANE | AVE H.264/HEVC Main and AVD HEVC pixel passes; live ANE TEXT hash now matches admitted 26C5035r pin | ANE remains observation-only with no acquisition/job; cold-state/ownership gates still apply; ProRes acquisition unqualified |
+| Video encode / ANE | AVE H.264/HEVC Main and AVD HEVC pixel passes; live H17 ANE LOAD/EXEC produced 64/64 bit-exact fp16 additions | One `1x64x1x1` addition job, not general model/framework qualification; ProRes acquisition unqualified |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
 | Audio | Protected preview starts automatically with grant; prior Mac speaker tone owner-confirmed | Current graph verification refused one startup speaker xrun; cause unresolved, counters/gates not relaxed; no new speaker playback |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
@@ -36,6 +36,37 @@ subsequent normal-default boot has yet been observed.
 See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 
 Obtain and verify a current backup before partitioning or deployment.
+
+## Guarded startup and first real H17 addition - 2026-11-15
+
+After the owner's manual reboot, `bringup-ane-start` and the installed boot
+binding passed. The live ANE TEXT hash matched the admitted 26C5035r pin.
+Raw-boot evidence and cold child power passed before writes; reserved preload,
+SID0 on all three DARTs and DAPF passed before READY with IPC `0x10441`.
+The ABI-3 `/dev/accel/accel0` node became available without a mode override.
+
+The prepared H17 HWX, LOAD sections, inputs and oracle matched their private
+hashes before one production ABI-3 runner invocation under a 60-second outer
+timeout. LOAD took 3.2 ms and reported three 4096-byte surfaces. One real
+`1x64x1x1` fp16 addition completed **64/64 lanes exact, maximum 0 ulp**. The
+single observed host-call latency was 229.3 microseconds; this is not a
+throughput or sustained-performance benchmark. Kernel logs recorded LOAD,
+CREATE, TERMINATE and UNLOAD, with no ANE/DART fault reported through the
+post-job check.
+
+The first follow-up verifier rejected the valid 4096-byte output because it
+incorrectly expected the 16-KiB allocation capacity. HWX `__FVMLIB` segment
+sizes feed the LOAD section sizes; ABI-3 returns that 4096-byte tensor span.
+Fixtures and the strict verifier now use 64 lanes at byte stride 64, spanning
+4096 bytes. All 64 saved output lanes passed bit-exact verification without
+rerunning hardware. Four numerical-contract tests passed, including empty,
+truncated, oversized-allocation, poison, no-op and last-lane corruption cases.
+
+This proves guarded startup and one small real device computation, not a
+general neural-network runtime, large-model support or daily-use stability.
+Observation/media/rescue rollback remains preserved. The current desktop was
+observed at 3456x2234 at 60 Hz and Speaker Protection at 1; no audio/display
+setting, reset, automatic reboot or extra hardware job was performed.
 
 ## Bringup improvements — 2026-11-14
 

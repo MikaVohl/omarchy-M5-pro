@@ -672,3 +672,22 @@ camera job is claimed.
   observation/media rollback preserved, no reboot or hardware ANE job. Runtime
   startup/output qualification remains pending the manual hardware return.
 
+## Guarded ANE startup and real H17 output - 2026-11-15
+
+- The owner's manual `bringup-ane-start` boot passed installed boot binding,
+  exact live TEXT identity, raw-boot/cold-child evidence and ordered
+  preload/SID0/DAPF checks. READY requested IPC `0x10441`; ABI-3 accel0 appeared.
+- Private preparation hashes passed before the actual production LOAD/EXEC
+  runner, bounded by a 60-second outer timeout. Three surfaces were 4096 bytes;
+  LOAD took 3.2 ms. One addition job passed 64/64 fp16 lanes with maximum 0 ulp.
+  Observed single-call host latency: 229.3 microseconds, not a benchmark.
+- Kernel logs recorded LOAD/CREATE/TERMINATE/UNLOAD, with no ANE/DART fault
+  reported through the post-job check. No extra job, reset or mode override.
+- The initial independent verifier wrongly expected 16384 bytes. Corrected
+  fixtures/verification to the HWX/ABI returned 4096-byte tensor span, retaining
+  strict length and all-64-lane checks. The saved real output passed afterward;
+  the hardware workload was not repeated to conceal the verifier failure.
+- Four deterministic numerical-contract cases passed: exact native-stride
+  lanes; empty/truncated/oversized results; allocation-sized copy rejection;
+  poison, no-op and last-lane corruption. General models remain unqualified.
+

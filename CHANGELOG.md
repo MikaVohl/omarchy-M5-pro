@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Guarded ANE startup and real H17 execution - 2026-11-15
+
+- Boot the cross-built guarded acquisition kernel with live firmware identity, cold ownership and ordered DART/DAPF checks intact.
+- Complete one real H17 fp16 addition: 64/64 lanes bit-exact, maximum 0 ulp, with LOAD/CREATE/TERMINATE/UNLOAD evidence.
+- Fix result verification and fixture lengths to the 4096-byte HWX/ABI tensor span rather than 16-KiB allocation capacity; verify the saved output without rerunning hardware.
+- Retain strict numerical/length checks and add allocation-copy rejection coverage; do not claim general model support or sustained stability.
+
 ## Live ANE identity and cross-build backend - 2026-11-15
 
 - Observe the exact admitted live ANE TEXT hash on the corrected metadata kernel without starting the engine.

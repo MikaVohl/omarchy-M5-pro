@@ -25,11 +25,17 @@ class AneProofTests(unittest.TestCase):
             with self.subTest(size=len(candidate)), self.assertRaisesRegex(ValueError, "exactly"):
                 proof.verify_result(candidate)
 
+    def test_allocation_capacity_is_not_a_returned_tensor_span(self):
+        expected = proof.fixtures()["expected.bin"]
+        allocation = expected + b"\xff" * (0x4000 - len(expected))
+        with self.assertRaises(ValueError):
+            proof.verify_result(allocation)
+
     def test_poison_noop_and_last_lane_corruption_fail(self):
         expected = proof.fixtures()["expected.bin"]
         corrupt = bytearray(expected)
         corrupt[63 * 64] ^= 1
-        for candidate in (b"\xff" * proof.SURFACE_BYTES, b"\0" * proof.SURFACE_BYTES,
+        for candidate in (b"\xff" * proof.TENSOR_BYTES, b"\0" * proof.TENSOR_BYTES,
                           proof.fixtures()["a.bin"], bytes(corrupt)):
             with self.assertRaisesRegex(ValueError, "lane"):
                 proof.verify_result(candidate)

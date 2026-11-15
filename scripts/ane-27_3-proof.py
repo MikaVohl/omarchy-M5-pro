@@ -3,10 +3,12 @@
 
 The public compiler target H17 and the pinned kernel's ABI-3 ane-run.py are
 an actual LOAD/EXEC path; READY or an accel node is not a job proof. Native
-binary_add_1x64x1x1 uses 64 channel lanes at byte stride 64, a 4096-byte tensor
-span and 16-KiB surface allocations. Source: aurora-silicon/mil-hwx-compiler
+binary_add_1x64x1x1 uses 64 channel lanes at byte stride 64. Its HWX tensor
+segment and ABI-3 returned buffer span are 4096 bytes; allocation capacity
+must not be mistaken for that returned length. Source: aurora-silicon/mil-hwx-compiler
 36feecaa7476968f72feb064c0f389a5b724a85b,
-research/oracles/h17/binary_add_1x64x1x1.json (byte parity, not device tested).
+research/oracles/h17/binary_add_1x64x1x1.json (native-byte parity oracle;
+hardware execution evidence is recorded separately).
 
 After preparing a new private directory, compile add.mil with the pinned open
 compiler using --target H17 --model-root DIR --output DIR/program. After the
@@ -25,7 +27,7 @@ import struct
 
 LANES = 64
 STRIDE = 64
-SURFACE_BYTES = 0x4000
+TENSOR_BYTES = LANES * STRIDE
 MIL = '''program(1.3)
 [buildInfo = dict<string, string>({})]
 {
@@ -37,8 +39,8 @@ MIL = '''program(1.3)
 
 
 def fixtures():
-    a, b = bytearray(SURFACE_BYTES), bytearray(SURFACE_BYTES)
-    expected = bytearray(b"\xff" * SURFACE_BYTES)
+    a, b = bytearray(TENSOR_BYTES), bytearray(TENSOR_BYTES)
+    expected = bytearray(b"\xff" * TENSOR_BYTES)
     for lane in range(LANES):
         x = (lane % 17 - 8) * 0.125
         z = (lane % 11 - 5) * 0.25
@@ -49,8 +51,8 @@ def fixtures():
 
 
 def verify_result(data):
-    if len(data) != SURFACE_BYTES:
-        raise ValueError(f"result surface must be exactly {SURFACE_BYTES} bytes, not {len(data)}")
+    if len(data) != TENSOR_BYTES:
+        raise ValueError(f"result tensor span must be exactly {TENSOR_BYTES} bytes, not {len(data)}")
     expected = fixtures()["expected.bin"]
     for lane in range(LANES):
         offset = lane * STRIDE
@@ -73,7 +75,7 @@ def main():
         for name, contents in fixtures().items():
             (args.directory / name).write_bytes(contents)
         print(json.dumps({"fixture": "H17-add-1x64x1x1", "lanes": LANES, "byte_stride": STRIDE,
-                          "surface_bytes": SURFACE_BYTES, "hardware_executed": False}))
+                          "tensor_bytes": TENSOR_BYTES, "hardware_executed": False}))
     else:
         lanes = verify_result(args.result.read_bytes())
         print(f"PASS: {lanes}/{LANES} fp16 result lanes bit-exact; execution requires separate LOAD/EXEC evidence")
