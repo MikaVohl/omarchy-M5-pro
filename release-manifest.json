@@ -68,6 +68,7 @@
     "outputs/persistent-install/policies/sources.json": "c0f4de06dc289f91637d71a2df3baa737395d6f2a05428ef16c717604382f060",
     "outputs/persistent-install/reference-source/mkrootfs-image.py": "7da05797a6483c1b72f6352919270da0e2c8f81caa35b0d71af8a33b9f9ea4f2",
     "outputs/persistent-install/root-init.sh": "5c0080eb6c8d03b3f32980882c4cd656543b0a81d9eb9839ec79bbf162045963",
+    "packaging/libfprint-git-aurora/PKGBUILD": "8befbfa8bbdb11836831773f0be645edc2707629fef9bcf34edb2ec30667993e",
     "patches/aura-j716s-fixed-clocks.patch": "c88670ac823c3387d477405ec1dfaeb8ed339877aa4f4c223c926954635133c4",
     "patches/aura-j716s-kis-debug.patch": "7510a61c793ce2645135450d024e0c003dc1bf18f8a73ffc0fe3ec4ff97ca448",
     "patches/kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce",
