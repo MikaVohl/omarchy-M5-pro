@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import plistlib
 import struct
 import tempfile
 import unittest
@@ -139,6 +140,71 @@ class PackageTests(unittest.TestCase):
                 tuning.chmod(0o644)
                 with self.assertRaisesRegex(ValueError, "not private"):
                     camera.check(package, anchor, ROOT / "work/sources/kernel")
+
+
+class MacOSAcquisitionTests(unittest.TestCase):
+    def test_targeted_acquisition_checks_sources_unit_build_and_guards(self):
+        daemon, blob, _ = daemon_fixture()
+        platform_plist = plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": "UNIT-A"}])
+        identity = {"schema": 1, "board": "j716s", "model": "Mac17,8", "macos_build": camera.BUILD,
+                    "unit_serial_sha256": camera.sha(b"UNIT-A"), "ioreg_platform_sha256": camera.sha(platform_plist)}
+        version = plistlib.dumps({"ProductBuildVersion": camera.BUILD})
+        sources = {"/System/Library/CoreServices/SystemVersion.plist": version, "/usr/sbin/appleh16camerad": daemon}
+        als = camera.als_tool()
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "capture"
+            with patch.object(camera, "als_tool", return_value=als), \
+                 patch.object(als, "macos_identity", return_value=(identity, platform_plist)), \
+                 patch.object(Path, "iterdir", return_value=iter(())), \
+                 patch.object(camera, "read_regular", side_effect=lambda path: sources[str(path)]), \
+                 patch.object(camera, "DAEMON_SHA256", camera.sha(daemon)), \
+                 patch.object(camera.subprocess, "check_output", side_effect=[b"", *([plistlib.dumps([])] * 5)]) as command:
+                result = camera.capture_macos(package, identity["unit_serial_sha256"])
+            self.assertFalse(result["hardware_touched"])
+            self.assertFalse(result["sensor_identity_proven"])
+            self.assertEqual((package / camera.FIRMWARE).read_bytes(), blob)
+            self.assertEqual(command.call_count, len(camera.MACOS_QUERIES))
+            for call in command.call_args_list:
+                self.assertEqual(call.args[0][:4], ["/usr/sbin/ioreg", "-r", "-a", "-l"])
+            with patch.object(camera, "current_identity", return_value=identity), \
+                 patch.object(camera, "DAEMON_SHA256", camera.sha(daemon)):
+                self.assertTrue(camera.check_macos(package, result["manifest_sha256"])["checked"])
+                with self.assertRaisesRegex(ValueError, "external SHA256"):
+                    camera.check_macos(package, "0" * 64)
+                with patch.object(camera, "current_identity", return_value={**identity, "unit_serial_sha256": "OTHER-UNIT"}):
+                    with self.assertRaisesRegex(ValueError, "unit, build"):
+                        camera.check_macos(package, result["manifest_sha256"])
+                manifest = package / camera.MACOS_REPORT
+                report = json.loads(manifest.read_bytes())
+                report["privacy_indicator_qualified"] = True
+                manifest.write_bytes(camera.encoded(report))
+                with self.assertRaisesRegex(ValueError, "qualification claims"):
+                    camera.check_macos(package, camera.sha(manifest.read_bytes()))
+                report["privacy_indicator_qualified"] = False
+                manifest.write_bytes(camera.encoded(report))
+                (package / camera.FIRMWARE).write_bytes(b"changed")
+                with self.assertRaisesRegex(ValueError, "source bytes differ"):
+                    camera.check_macos(package, camera.sha(manifest.read_bytes()))
+
+    def test_wrong_paired_identity_prevents_all_camera_source_reads(self):
+        als = camera.als_tool()
+        with patch.object(camera, "als_tool", return_value=als), \
+             patch.object(als, "macos_identity", side_effect=ValueError("different physical unit")), \
+             patch.object(camera.subprocess, "check_output") as command, \
+             patch.object(camera, "read_regular") as source:
+            with self.assertRaisesRegex(ValueError, "different physical unit"):
+                camera.capture_macos(Path("unused"), "0" * 64)
+            command.assert_not_called()
+            source.assert_not_called()
+
+    def test_empty_registry_is_allowed_only_explicitly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "absent.plist"
+            path.write_bytes(b"")
+            path.chmod(0o600)
+            with self.assertRaisesRegex(ValueError, "bounded single-link"):
+                camera.read_regular(path, private=True)
+            self.assertEqual(camera.read_regular(path, private=True, allow_empty=True), b"")
 
 
 if __name__ == "__main__":

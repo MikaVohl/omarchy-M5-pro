@@ -27,7 +27,7 @@ def load(name, filename):
 als = load("als_preparation", "prepare-als-calibration.py")
 usb = load("usb_power_qualification", "qualify-usb-power.py")
 PROFILE = {"model": "Mac17,8", "board": "j716s", "macos_build": "26C5035r"}
-BLOB = b"\x00\xff\x13\x00factory calibration bytes\x00"
+BLOB = b"\x00\xff\x13\x00synthetic illuminance calibration fixture\x00".ljust(als.CALIBRATION_SIZE, b"\0")
 
 
 def put(root, name, data):
@@ -38,7 +38,7 @@ def put(root, name, data):
 
 
 def capture_fixture(root):
-    root.mkdir()
+    root.mkdir(mode=0o700)
     identity = plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": "UNIT-A"}])
     source = plistlib.dumps([{"IORegistryEntryName": "als", "IORegistryEntryChildren": [
         {"IORegistryEntryChildren": [{"IORegistryEntryChildren": [{"CalibrationData": BLOB}]}]}]}])
@@ -48,6 +48,8 @@ def capture_fixture(root):
     put(root, "platform.plist", identity)
     put(root, "als.plist", source)
     put(root, "capture.json", json.dumps(report))
+    for path in root.iterdir():
+        path.chmod(0o600)
     return root
 
 
@@ -109,6 +111,11 @@ class CalibrationTests(unittest.TestCase):
             data = plistlib.dumps([{"IORegistryEntryChildren": [{"CalibrationData": BLOB}]}], fmt=fmt)
             self.assertEqual(als.calibration(data), BLOB)
 
+    def test_native_illuminance_size_rejects_truncation_oversize_and_hmca(self):
+        for blob in (BLOB[:-1], BLOB + b"\0", b"ACmH" + b"\0" * (9962 - 4)):
+            with self.subTest(size=len(blob)), self.assertRaisesRegex(ValueError, "exactly 193 bytes"):
+                als.calibration(plistlib.dumps([{"CalibrationData": blob}]))
+
     def test_no_missing_empty_typed_or_ambiguous_calibration(self):
         for tree in ([], [{}], [{"CalibrationData": b""}], [{"CalibrationData": "not-data"}],
                      [{"CalibrationData": BLOB, "IORegistryEntryChildren": [{"CalibrationData": BLOB}]}],
@@ -156,6 +163,69 @@ class CalibrationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 als.capture(Path("unused"), PROFILE)
 
+    def test_capture_rejects_other_unit_before_reading_als(self):
+        identity = plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": "UNIT-B"}])
+        with patch.object(als.platform, "system", return_value="Darwin"), \
+             patch.object(als.subprocess, "check_output", side_effect=["Mac17,8\n", "26C5035r\n", identity]) as command:
+            with self.assertRaisesRegex(ValueError, "different physical unit"):
+                als.capture(Path("unused"), PROFILE, als.sha(b"UNIT-A"), evidence=True)
+            self.assertEqual(command.call_count, 3)
+
+    def test_evidence_preserves_missing_calibration_without_installable_capture(self):
+        identity = plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": "UNIT-A"}])
+        for source in (b"", plistlib.dumps([{"IORegistryEntryName": "als"}])):
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                factory = root / "factory"
+                factory.mkdir()
+                (factory / "HmCA-unit").write_bytes(b"Genuine factory envelope fixture, NOT CalibrationData")
+                (factory / "FSC2-unit").write_bytes(b"out-of-scope")
+                output = root / "capture"
+                with patch.object(als.platform, "system", return_value="Darwin"), \
+                     patch.object(als.subprocess, "check_output", side_effect=["Mac17,8\n", "26C5035r\n", identity, source]), \
+                     patch.object(als, "FACTORY_DIR", factory):
+                    report = als.capture(output, PROFILE, als.sha(b"UNIT-A"), evidence=True)
+                self.assertFalse(report["installable_calibration"])
+                self.assertFalse(report["factory"]["calibrationdata_equivalence_proven"])
+                self.assertFalse(report["hardware_touched"])
+                self.assertEqual((output / "als.plist").read_bytes(), source)
+                self.assertEqual([entry.name for entry in (output / "factory").iterdir()], ["HmCA-unit"])
+                self.assertFalse((output / "capture.json").exists())
+                self.assertFalse((output / als.FIRMWARE).exists())
+                serial = put(root, "serial", b"UNIT-A\0")
+                with self.assertRaises(FileNotFoundError):
+                    als.prepare_capture(output, root / "prepared", PROFILE, serial)
+
+    def test_genuine_evidence_prepares_byte_identical_calibration(self):
+        identity = plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": "UNIT-A"}])
+        source = plistlib.dumps([{"IORegistryEntryChildren": [{"CalibrationData": BLOB}]}])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "capture"
+            with patch.object(als.platform, "system", return_value="Darwin"), \
+                 patch.object(als.subprocess, "check_output", side_effect=["Mac17,8\n", "26C5035r\n", identity, source]), \
+                 patch.object(als, "FACTORY_DIR", root / "absent"):
+                report = als.capture(output, PROFILE, als.sha(b"UNIT-A"), evidence=True)
+            self.assertTrue(report["installable_calibration"])
+            self.assertFalse(report["factory"]["available"])
+            serial = put(root, "serial", b"UNIT-A\0")
+            prepared = root / "prepared"
+            als.prepare_capture(output, prepared, PROFILE, serial)
+            self.assertEqual((prepared / als.FIRMWARE).read_bytes(), BLOB)
+            self.assertEqual((prepared / "als.plist").read_bytes(), source)
+            self.assertFalse((prepared / "als-acquisition.json").exists())
+            (output / "als.plist").chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "private single-link"):
+                als.prepare_capture(output, root / "refused", PROFILE, serial)
+
+    def test_factory_evidence_never_follows_links_or_reads_other_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "FSC2").write_bytes(b"not ALS")
+            (root / "HmCA-link").symlink_to(root / "FSC2")
+            with patch.object(als, "FACTORY_DIR", root), self.assertRaises(OSError):
+                als.factory_evidence()
+
 
 class CalibrationDeploymentTests(unittest.TestCase):
     def setUp(self):
@@ -195,6 +265,14 @@ class CalibrationDeploymentTests(unittest.TestCase):
         (self.package / als.FIRMWARE).write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "source evidence differs"):
             als.checked_package(self.package, PROFILE, self.anchor)
+
+    def test_install_rejects_native_wrong_size_before_publication(self):
+        for blob in (BLOB[:-1], BLOB + b"\0", b"ACmH" + b"\0" * (9962 - 4)):
+            (self.package / "als.plist").write_bytes(plistlib.dumps([{"CalibrationData": blob}]))
+            for apply in (False, True):
+                with self.subTest(size=len(blob), apply=apply), self.assertRaisesRegex(ValueError, "exactly 193 bytes"):
+                    als.install(self.package, PROFILE, self.anchor, apply)
+                self.assertEqual(list(self.target.parent.iterdir()), [])
 
     def test_check_install_writes_nothing_then_private_install_rolls_back(self):
         report = als.install(self.package, PROFILE, self.anchor, False)

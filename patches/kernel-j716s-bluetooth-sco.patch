@@ -1,0 +1,325 @@
+Subject: Bluetooth: btcentauri_t6050: implement native standard-header SCO
+
+Target source: aurora-silicon/linux 8ab10100a4c1c944797e3fc8345589aff57777df
+https://github.com/aurora-silicon/linux/blob/8ab10100a4c1c944797e3fc8345589aff57777df/drivers/bluetooth/btcentauri_t6050.c
+
+Same-unit native 26C5035r inputs (private, not included in this patch):
+- AirshipDK.framework/t2026-CentauriBeta.plist, 17902 bytes:
+  b4b0736c3f2151b73d735d03fc1cfcfd1d52295954b6f9df7e0c464407766943
+- usr/sbin/bluetoothd, 37723136 bytes, arm64e slice offset 12795904:
+  eb0d4a8566365f95df5b6bc42537cef2cc1cec785834e507a55df9930c0dd539
+- DriverKit dyld cache, 25591808 bytes:
+  56fce56ce213e521e00cbfaa9e02ac0d9cd171b282a3f23fc7081c827f606b78
+- Airship __TEXT, VM 0x2617e5000, 611944 bytes, macOS cache .52+0x13e5000:
+  55b8f5a26b661dd04d4d035018a4c84feaaf1fa95b8733961d24c722e9232c29
+
+The current native profile, not historical board inventory, selects in-place
+TX3/RX9, nine slots, 724-byte footer, index vector and doorbell equal to ring
+ID, main interrupt. bluetoothd 0x1000ee378/0x10015a174/0x100159fd4 proves
+standard HCI SCO header+payload, then optional RX attributes: 0 terminator,
+1 single-byte marker, 2 nine-byte marker/timestamp. TX descriptor length is
+exactly three-byte HCI header+payload, with no extra terminator counted.
+0x1001ac85c retains HCI packet status bits 13:12; attributes do not invent them.
+
+Airship::tr_controller::sync 0x2617e9b30 and transfer_queue completion dispatch
+0x261850d40 locate completion flags in descriptor byte 15 (bits 3:1), tag at
+12 and length in word0 bits31:8. Tagged completion validation precedes SCO
+slot reuse; errors stop transport and require a fresh firmware boot. Ring
+ownership/space is distinct from HCI synchronous credits: HCI events and
+core accounting stay unchanged. No synthetic completed-packet events.
+
+Host regressions extract production functions, not a parallel protocol mock:
+framing/attributes/truncation/status, wrap/full/unvalidated-tail race,
+completion failure/tag/ownership, caller skb ownership, RX repost/ENOMEM,
+command/ACL regression, close/flush/reopen/fault admission. No hardware run.
+
+Private native HDR four-byte SCO headers and vendor HDR negotiation remain
+unsupported. No foreign firmware, calibration, DMA/audio dump, runtime
+installation or controller reset is part of this patch. Native reverse
+engineering is source justification, not HFP microphone qualification.
+
+--- a/drivers/bluetooth/btcentauri_t6050.c
++++ b/drivers/bluetooth/btcentauri_t6050.c
+@@ -36,6 +36,13 @@
+ #define CEN_MESSAGE_SLOTS 16
+ #define CEN_AUX_BASE 0x20000
+ #define CEN_CAPTURE_SIZE SZ_1M
++/* 26C5035r AirshipDK t2026-CentauriBeta.plist: in-place SCO TR3/TR9,
++ * nine slots, 724-byte transfer/completion footer, main interrupt.
++ * bluetoothd arm64e 0x1000ee378 writes exactly HCI header + payload;
++ * 0x10015a174/0x100159fd4 split RX HCI length from typed attributes.
++ * No vendor HDR-SCO negotiation or private four-byte SCO header support.
++ */
++#define CEN_SCO_TX_AUX 1
+ 
+ #define CEN_OP_READ_PROP_FEATURES 0xffa3
+ #define CEN_OP_CREATE_CONN 0xff7b
+@@ -71,12 +78,13 @@
+ 	unsigned int irq_count;
+ 	bool irq_vectors;
+ 	struct sk_buff_head txq;
+-	struct sk_buff_head acl_txq, le_txq;
+-	u16 acl_tx_head, le_tx_head;
++	struct sk_buff_head acl_txq, le_txq, sco_txq;
++	u16 acl_tx_head, le_tx_head, sco_tx_head;
++	u16 sco_tx_complete;
+ 	u16 message_head, message_tag, tx_head, rx_head, rx_post;
+ 	u16 le_rx_head, le_rx_post;
+ 	struct cen_aux_state aux[ARRAY_SIZE(cen_aux_specs)];
+-	bool ipc_requested, running;
++	bool ipc_requested, running, faulted;
+ 	u8 native_startup_steps;
+ 	bool connection_command_supported, connection_status_pending;
+ };
+@@ -208,6 +216,104 @@
+ 	return 0;
+ }
+ 
++/* Airship::tr_controller::sync 0x2617e9b30 and transfer_queue completion
++ * dispatch 0x261850d40 in the paired native cache: completion flags are in
++ * descriptor byte 15, not the length/type word. Codes 3/5/6 are failures;
++ * code 4 normalizes to successful code 2. Code 1 is not a final completion
++ * and is not supported by this single-descriptor synchronous path.
++ */
++static int cen_sco_descriptor_status(const u8 *descriptor, u16 tag)
++{
++	if (descriptor[0] != 1 || get_unaligned_le16(descriptor + 12) != tag)
++		return -EPROTO;
++	switch ((descriptor[15] >> 1) & 7) {
++	case 0:
++	case 2:
++	case 4:
++		return 0;
++	case 3:
++	case 5:
++	case 6:
++		return -EIO;
++	default:
++		return -EPROTO;
++	}
++}
++
++static int cen_sco_reclaim(struct cen_bt *bt)
++{
++	const struct cen_aux_spec *spec = &cen_aux_specs[CEN_SCO_TX_AUX];
++	u16 tail = cen_tail(bt, spec->id), pending, completed;
++
++	if (tail >= spec->slots)
++		return -EPROTO;
++	pending = (bt->sco_tx_head + spec->slots - bt->sco_tx_complete) % spec->slots;
++	completed = (tail + spec->slots - bt->sco_tx_complete) % spec->slots;
++	if (completed > pending)
++		return -EPROTO;
++	while (bt->sco_tx_complete != tail) {
++		u8 *descriptor = bt->arena + bt->aux[CEN_SCO_TX_AUX].offset +
++				 bt->sco_tx_complete * (16 + spec->footer);
++		int ret;
++
++		dma_rmb();
++		ret = cen_sco_descriptor_status(descriptor, bt->sco_tx_complete + 1);
++		if (ret)
++			return ret;
++		bt->sco_tx_complete = (bt->sco_tx_complete + 1) % spec->slots;
++	}
++	return 0;
++}
++
++static int cen_sco_packet_length(const u8 *data, u32 length)
++{
++	u32 packet_length, pos;
++
++	if (length < HCI_SCO_HDR_SIZE)
++		return -EPROTO;
++	/* Standard HCI SCO handle + packet-status bits only. Extended native
++	 * packet types/headers are not silently treated as standard SCO.
++	 */
++	if (get_unaligned_le16(data) & 0xc000)
++		return -EOPNOTSUPP;
++	packet_length = HCI_SCO_HDR_SIZE + data[2];
++	if (packet_length > length)
++		return -EPROTO;
++	for (pos = packet_length; pos < length;) {
++		if (!data[pos])
++			break;
++		if (data[pos] == 1)
++			pos++;
++		else if (data[pos] == 2 && length - pos >= 9)
++			pos += 9;
++		else
++			return -EPROTO;
++	}
++	return packet_length;
++}
++
++static int cen_receive_sco(struct cen_bt *bt, const u8 *data, u32 length)
++{
++	struct sk_buff *skb;
++	int packet_length = cen_sco_packet_length(data, length);
++
++	if (packet_length < 0)
++		return packet_length;
++	/* Metadata attributes are not HCI audio bytes. Native status remains in
++	 * handle bits 13:12; do not invent a status from an opaque attribute.
++	 */
++	skb = bt_skb_alloc(packet_length, GFP_KERNEL);
++	if (!skb) {
++		bt->hdev->stat.err_rx++;
++		return 0;
++	}
++	skb_put_data(skb, data, packet_length);
++	hci_skb_pkt_type(skb) = HCI_SCODATA_PKT;
++	bt->hdev->stat.byte_rx += packet_length;
++	hci_recv_frame(bt->hdev, skb);
++	return 0;
++}
++
+ static void cen_aux_rx_buffer(struct cen_bt *bt, unsigned int index, u16 slot)
+ {
+ 	const struct cen_aux_spec *spec = &cen_aux_specs[index];
+@@ -221,7 +327,7 @@
+ 
+ static bool cen_aux_required(u16 id)
+ {
+-	return id == 2 || id == 8;
++	return id == 2 || id == 8 || id == 3 || id == 9;
+ }
+ 
+ static int cen_aux_start(struct cen_bt *bt)
+@@ -275,6 +381,10 @@
+ 		tail = cen_tail(bt, spec->id);
+ 		if (tail >= spec->slots)
+ 			return -EPROTO;
++		if (spec->id == 9 &&
++		    (tail + spec->slots - state->head) % spec->slots >
++			    (state->post + spec->slots - state->head) % spec->slots)
++			return -EPROTO;
+ 		while (state->head != tail && budget--) {
+ 			u8 *descriptor = bt->arena + state->offset +
+ 					 state->head * (16 + spec->footer);
+@@ -282,11 +392,17 @@
+ 
+ 			dma_rmb();
+ 			length = get_unaligned_le32(descriptor) >> 8;
++			if (spec->id == 9 &&
++			    cen_sco_descriptor_status(descriptor, state->head + 1))
++				return -EPROTO;
+ 			if (length > spec->footer)
+ 				return -EPROTO;
+ 			if (repost && spec->id == 8 &&
+ 			    cen_receive_acl(bt, descriptor + 16, length))
+ 				return -EPROTO;
++			if (repost && spec->id == 9 &&
++			    cen_receive_sco(bt, descriptor + 16, length))
++				return -EPROTO;
+ 			state->head = (state->head + 1) % spec->slots;
+ 			if (repost) {
+ 				cen_aux_rx_buffer(bt, i, state->post);
+@@ -371,7 +487,10 @@
+ 	u32 wire_length;
+ 
+ 	while (!skb_queue_empty(queue)) {
+-		tail = cen_tail(bt, ring);
++		/* SCO slots are reusable only after tagged completion validation;
++		 * a newer live tail must not let us overwrite an unchecked error.
++		 */
++		tail = ring == 3 ? bt->sco_tx_complete : cen_tail(bt, ring);
+ 		if (tail >= slots)
+ 			return -EPROTO;
+ 		next = (*head + 1) % slots;
+@@ -402,6 +521,8 @@
+ 		cen_post(bt, ring, next);
+ 		if (hci_skb_pkt_type(skb) == HCI_COMMAND_PKT)
+ 			bt->hdev->stat.cmd_tx++;
++		else if (hci_skb_pkt_type(skb) == HCI_SCODATA_PKT)
++			bt->hdev->stat.sco_tx++;
+ 		else
+ 			bt->hdev->stat.acl_tx++;
+ 		bt->hdev->stat.byte_tx += wire_length;
+@@ -528,9 +649,26 @@
+ 	     cen_transmit(bt, &bt->le_txq, 4, CEN_LE_SLOTS, CEN_LE_TX,
+ 			  CEN_LE_FOOTER, &bt->le_tx_head)))
+ 		goto protocol_error;
++	/* DMA-ring ownership is independent of HCI Number Of Completed Packets.
++	 * cen_transmit keeps one slot empty and leaves queued packets untouched
++	 * on ring-full; the native main interrupt wakes this work on completion.
++	 * HCI events continue unchanged, so the core owns synchronous credits.
++	 */
++	if (cen_sco_reclaim(bt)) {
++		hdev->stat.err_tx++;
++		goto protocol_error;
++	}
++	if (cen_transmit(bt, &bt->sco_txq, 3,
++			 cen_aux_specs[CEN_SCO_TX_AUX].slots,
++			 bt->aux[CEN_SCO_TX_AUX].offset,
++			 cen_aux_specs[CEN_SCO_TX_AUX].footer,
++			 &bt->sco_tx_head))
++		goto protocol_error;
+ 	goto unlock;
+ protocol_error:
+ 	bt->running = false;
++	bt->faulted = true;
++	skb_queue_purge(&bt->sco_txq);
+ 	hdev->stat.err_rx++;
+ 	dev_err(&bt->pdev->dev,
+ 		"Beta transport stopped (exec=%u ipc=%u); interrupt processing stopped\n",
+@@ -544,6 +682,13 @@
+ 	struct cen_bt *bt = hci_get_drvdata(hdev);
+ 
+ 	mutex_lock(&bt->lock);
++	/* A malformed descriptor/device reset invalidates ownership. A plain
++	 * HCI down/up cannot repair it; keep the existing fresh-firmware gate.
++	 */
++	if (bt->faulted) {
++		mutex_unlock(&bt->lock);
++		return -EIO;
++	}
+ 	bt->running = true;
+ 	schedule_work(&bt->io_work);
+ 	mutex_unlock(&bt->lock);
+@@ -562,6 +707,7 @@
+ 	skb_queue_purge(&bt->txq);
+ 	skb_queue_purge(&bt->acl_txq);
+ 	skb_queue_purge(&bt->le_txq);
++	skb_queue_purge(&bt->sco_txq);
+ 	return 0;
+ }
+ 
+@@ -685,6 +831,7 @@
+ 	skb_queue_purge(&bt->txq);
+ 	skb_queue_purge(&bt->acl_txq);
+ 	skb_queue_purge(&bt->le_txq);
++	skb_queue_purge(&bt->sco_txq);
+ 	return 0;
+ }
+ 
+@@ -726,6 +873,22 @@
+ 		}
+ 		if (ret)
+ 			goto out;
++	} else if (hci_skb_pkt_type(skb) == HCI_SCODATA_PKT) {
++		/* Linux exposes only the standard three-byte SCO header. Reject
++		 * outgoing packet-status/reserved bits and non-exact wire length;
++		 * no private HDR-SCO packet/header conversion is performed.
++		 */
++		if (skb->len < HCI_SCO_HDR_SIZE ||
++		    skb->len != HCI_SCO_HDR_SIZE + skb->data[2] ||
++		    skb->len > cen_aux_specs[CEN_SCO_TX_AUX].footer) {
++			ret = -EMSGSIZE;
++			goto out;
++		}
++		if (get_unaligned_le16(skb->data) & 0xf000) {
++			ret = -EOPNOTSUPP;
++			goto out;
++		}
++		queue = &bt->sco_txq;
+ 	} else if (hci_skb_pkt_type(skb) != HCI_COMMAND_PKT) {
+ 		ret = -EOPNOTSUPP;
+ 		goto out;
+@@ -858,6 +1021,7 @@
+ 	skb_queue_head_init(&bt->txq);
+ 	skb_queue_head_init(&bt->acl_txq);
+ 	skb_queue_head_init(&bt->le_txq);
++	skb_queue_head_init(&bt->sco_txq);
+ 	INIT_WORK(&bt->io_work, cen_io_work);
+ 	ret = pcim_enable_device(pdev);
+ 	if (ret)

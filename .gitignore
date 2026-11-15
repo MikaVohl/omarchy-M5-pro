@@ -31,6 +31,7 @@ outputs/kernel-bringup-candidate/
 outputs/kernel-sep-probe-candidate/
 outputs/kernel-sep-sensor-candidate/
 outputs/kernel-touchid-candidate/
+outputs/kernel-touchid-sco-candidate/
 work/touchid-src/
 work/omarchy-mac-overlay/
 work/libfprint-aurora/

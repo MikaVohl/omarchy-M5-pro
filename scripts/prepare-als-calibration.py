@@ -2,6 +2,10 @@
 """Preserve same-unit ALS evidence and install only receipt-bound CalibrationData.
 
 capture runs on paired macOS; check/prepare bind its plists to this Linux unit.
+J716s/26C5035r illuminance CalibrationData must be exactly 193 bytes, matching
+the native VD6286 consumer. Its internal layout/checksum is not decoded here.
+capture-evidence also preserves targeted factory evidence when CalibrationData
+is absent; that diagnostic package cannot be installed. Neither reads AOP MMIO.
 recover-factory privately preserves the same-unit HmCA factory record, NOT an
 installable CalibrationData blob. check-install is read-only; install and rollback
 change only the firmware file and their receipt. They never touch AOP, load a
@@ -27,6 +31,11 @@ TARGET = Path("/usr/lib/firmware") / FIRMWARE
 RECEIPT = Path("/etc/j716s/als-calibration.json")
 MANIFEST = "als-calibration-manifest.json"
 MAX_INPUT = 4 * 1024 * 1024
+# Exact 26C5035r AppleSPUVD6286::loadCalibrationData checks 0xc1 before
+# copying unchanged bytes to ALS property 0x0b. This is a size contract,
+# not a decoded calibration layout/checksum. Color property 0xfb is separate.
+CALIBRATION_SIZE = 0xc1
+FACTORY_DIR = Path("/System/Volumes/Hardware/FactoryData/System/Library/Caches/com.apple.factorydata")
 
 
 def private_read(path):
@@ -257,6 +266,8 @@ def calibration(data):
     visit(roots[0])
     if len(found) != 1:
         raise ValueError(f"Expected one CalibrationData blob, found {len(found)}")
+    if len(found[0]) != CALIBRATION_SIZE:
+        raise ValueError(f"J716s/26C5035r illuminance CalibrationData must be exactly {CALIBRATION_SIZE} bytes; HmCA/color data is not interchangeable")
     return found[0]
 
 
@@ -274,34 +285,84 @@ def json_bytes(value):
     return (json.dumps(value, indent=2) + "\n").encode()
 
 
-def capture(directory, profile):
+def macos_identity(profile, unit_sha256=None):
     if platform.system() != "Darwin":
         raise ValueError("Capture must run on the target's paired macOS")
-    model = subprocess.check_output(["sysctl", "-n", "hw.model"], text=True).strip()
-    build = subprocess.check_output(["sw_vers", "-buildVersion"], text=True).strip()
+    model = subprocess.check_output(["/usr/sbin/sysctl", "-n", "hw.model"], text=True, timeout=30).strip()
+    build = subprocess.check_output(["/usr/bin/sw_vers", "-buildVersion"], text=True, timeout=30).strip()
     if (model, build) != (profile["model"], profile["macos_build"]):
         raise ValueError("macOS model/build differs from profiles/j716s.json")
-    identity = subprocess.check_output(["ioreg", "-r", "-d", "1", "-a", "-c", "IOPlatformExpertDevice"], timeout=30)
-    als = subprocess.check_output(["ioreg", "-r", "-a", "-n", "als", "-l"], timeout=30)
+    identity = subprocess.check_output(["/usr/sbin/ioreg", "-r", "-d", "1", "-a", "-c", "IOPlatformExpertDevice"], timeout=30)
     actual_model, serial = platform_identity(identity)
     if actual_model != model:
         raise ValueError("IORegistry and sysctl disagree about target model")
-    blob = calibration(als)
-    report = {"schema": 1, "model": model, "board": profile["board"], "macos_build": build,
-              "unit_serial_sha256": sha(serial.encode("ascii")),
-              "ioreg_als_sha256": sha(als), "ioreg_platform_sha256": sha(identity),
-              "firmware": FIRMWARE, "firmware_sha256": sha(blob), "firmware_size": len(blob),
-              "source": "ioreg -r -a -n als -l / CalibrationData",
-              "byte_for_byte": True, "physically_qualified": False}
-    save_new(directory, {"als.plist": als, "platform.plist": identity,
-                         "capture.json": json_bytes(report)})
+    serial_hash = sha(serial.encode("ascii"))
+    if unit_sha256 is not None and serial_hash != unit_sha256:
+        raise ValueError("macOS capture is from a different physical unit")
+    return {"schema": 1, "model": model, "board": profile["board"], "macos_build": build,
+            "unit_serial_sha256": serial_hash, "ioreg_platform_sha256": sha(identity)}, identity
+
+
+def factory_evidence():
+    """Preserve HmCA only, with no envelope conversion or installable claim."""
+    files, records = {}, []
+    try:
+        paths = sorted(FACTORY_DIR.iterdir())
+    except OSError as error:
+        return files, {"available": False, "error": str(error), "records": records}
+    for path in paths:
+        if not path.name.startswith("HmCA"):
+            continue
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= MAX_INPUT:
+                raise ValueError("HmCA source must be a bounded regular file")
+            with os.fdopen(os.dup(fd), "rb") as stream:
+                data = stream.read(MAX_INPUT + 1)
+            if len(data) != info.st_size:
+                raise ValueError("HmCA source changed or is oversized")
+        finally:
+            os.close(fd)
+        name = "factory/" + path.name
+        files[name] = data
+        records.append({"file": name, "bytes": len(data), "sha256": sha(data)})
+    return files, {"available": True, "records": records,
+                   "calibrationdata_equivalence_proven": False}
+
+
+def capture(directory, profile, unit_sha256=None, evidence=False):
+    report, identity = macos_identity(profile, unit_sha256)
+    als = subprocess.check_output(["/usr/sbin/ioreg", "-r", "-a", "-n", "als", "-l"], timeout=30)
+    if len(als) > MAX_INPUT:
+        raise ValueError("ALS IORegistry source exceeds its size bound")
+    files = {"als.plist": als, "platform.plist": identity}
+    report.update({"ioreg_als_sha256": sha(als), "physically_qualified": False})
+    try:
+        blob = calibration(als)
+    except (ValueError, plistlib.InvalidFileException) as error:
+        if not evidence:
+            raise
+        report.update({"installable_calibration": False, "calibration_error": str(error)})
+    else:
+        report.update({"firmware": FIRMWARE, "firmware_sha256": sha(blob), "firmware_size": len(blob),
+                       "source": "ioreg -r -a -n als -l / CalibrationData", "byte_for_byte": True})
+        files["capture.json"] = json_bytes(report)
+    if evidence:
+        factory_files, factory = factory_evidence()
+        files.update(factory_files)
+        acquisition = {**report, "factory": factory, "installed": False, "hardware_touched": False,
+                       "installable_calibration": "capture.json" in files}
+        files["als-acquisition.json"] = json_bytes(acquisition)
+        report = acquisition
+    save_new(directory, files)
     return report
 
 
 def inspect(directory, profile, serial_path=SERIAL_PATH):
-    return inspect_files((directory / "capture.json").read_bytes(),
-                         (directory / "als.plist").read_bytes(),
-                         (directory / "platform.plist").read_bytes(), profile, serial_path)
+    return inspect_files(private_read(directory / "capture.json"),
+                         private_read(directory / "als.plist"),
+                         private_read(directory / "platform.plist"), profile, serial_path)
 
 
 def inspect_files(raw_report, als, identity, profile, serial_path):
@@ -321,11 +382,23 @@ def inspect_files(raw_report, als, identity, profile, serial_path):
             "physically_qualified": False, "installed": False}, blob
 
 
+def prepare_capture(directory, output, profile, serial_path=SERIAL_PATH):
+    files = {name: private_read(directory / name)
+             for name in ("capture.json", "als.plist", "platform.plist")}
+    report, blob = inspect_files(files["capture.json"], files["als.plist"], files["platform.plist"],
+                                 profile, serial_path)
+    save_new(output, {FIRMWARE: blob, MANIFEST: json_bytes(report), **files})
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    cap = commands.add_parser("capture", help="macOS: collect private plist evidence; no hardware writes")
-    cap.add_argument("directory", type=Path)
+    for name in ("capture", "capture-evidence"):
+        cap = commands.add_parser(name, help="macOS: collect private evidence; no hardware writes")
+        cap.add_argument("directory", type=Path)
+        cap.add_argument("--unit-serial-sha256", required=name == "capture-evidence",
+                         help="Linux unit_serial_sha256 anchor; refuses other units before ALS reads")
     for name in ("check", "prepare"):
         command = commands.add_parser(name, help="validate same-unit capture" if name == "check" else "create private firmware staging directory")
         command.add_argument("directory", type=Path)
@@ -346,8 +419,9 @@ def main():
     args = parser.parse_args()
     profile = json.loads((PROJECT / "profiles/j716s.json").read_text())
     try:
-        if args.command == "capture":
-            report = capture(args.directory, profile)
+        if args.command in ("capture", "capture-evidence"):
+            report = capture(args.directory, profile, args.unit_serial_sha256,
+                             args.command == "capture-evidence")
         elif args.command == "recover-factory":
             report = recover_factory(args.output, args.kernel, args.device, args.partition_uuid)
         elif args.command in ("check-install", "install"):
@@ -359,11 +433,10 @@ def main():
                 compatible = Path("/sys/firmware/devicetree/base/compatible").read_bytes().split(b"\0")
                 if b"apple,j716s" not in compatible:
                     raise ValueError("Current Linux target is not J716s")
-            report, blob = inspect(args.directory, profile, args.target_serial_file)
             if args.command == "prepare":
-                save_new(args.output, {FIRMWARE: blob, MANIFEST: json_bytes(report),
-                                      **{name: (args.directory / name).read_bytes()
-                                         for name in ("als.plist", "platform.plist", "capture.json")}})
+                report = prepare_capture(args.directory, args.output, profile, args.target_serial_file)
+            else:
+                report, _ = inspect(args.directory, profile, args.target_serial_file)
         print(json.dumps(report, indent=2))
     except (OSError, ValueError, KeyError, plistlib.InvalidFileException, subprocess.SubprocessError) as error:
         parser.exit(1, f"ALS preparation refused: {error}\n")

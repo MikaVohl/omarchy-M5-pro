@@ -26,6 +26,12 @@ FIRMWARE = "prores-t6050-init.bin"
 REPORT = "prores-preparation.json"
 RECIPE = "j716s-26C5035r-prores-627-native-v1"
 COUNTS, LIMITS = (82, 80, 62, 12), (0x4000, 0x4000, 0x1000000, 0x4000)
+FIRST_DMA_BLOCKERS = (
+    "reviewed depth-one DMA quarantine patch and full kernel/DT/module verification",
+    "live T6050 engine ID/version and native v1 descriptor/IRQ/statistics evidence",
+    "SCODEC/APR/DART quiescence, preserved translations and native power/boot contract",
+    "exact-board attended one-shot trial with physical power-cycle fallback",
+)
 # Mach-O native pointer lists selected by AppleProResHW 627's T6050/core0
 # paths in SetScodecPSTunablesByDevID, SetProResTunablesByDevID and
 # SetAXI2AFTunablesByDevID. These are FILE offsets, not MMIO addresses.
@@ -300,7 +306,8 @@ def main():
             data = prepare_image(decode_source(private_input(args.kernelcache, SOURCE_SIZE)))
             save_candidate(args.output, data)
             result = validate_apri(data)
-        print(json.dumps({"candidate": result, "installed": False, "engine_started": False}))
+        print(json.dumps({"candidate": result, "installed": False, "engine_started": False,
+                          "first_dma_authorized": False, "first_dma_blockers": FIRST_DMA_BLOCKERS}))
     except (ValueError, OSError, KeyError, importlib.metadata.PackageNotFoundError) as error:
         parser.exit(1, "Refused: " + (str(error) if isinstance(error, Refused) else
                                     "input, decoder or profile unavailable/invalid") + "\n")

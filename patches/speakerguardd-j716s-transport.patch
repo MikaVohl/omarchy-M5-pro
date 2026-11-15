@@ -1,0 +1,14 @@
+--- a/packaging/session/wiring.py
++++ b/packaging/session/wiring.py
+@@ -125,6 +125,11 @@
+     # t8152_aop_audio.rs, T8142 configuration: ADMAC burst-residue DMA,
+     # S24_LE playback and S16_LE sense, not the T6041 firmware ring above.
+     "apple,t8142-aop-audio": {"transport": "aop-dma", "formats": ["S24_LE"], "sense_batch": False, "speaker_headroom": 0,
++                              "speaker_irq": False},
++    # Same dmaengine PCM driver, HW_CFG_T6050: six S24_LE speaker slots,
++    # twelve S16_LE sense slots; the firmware owns the serializer clocks.
++    # Keep timer scheduling until interrupt cadence is qualified on T6050.
++    "apple,t6050-aop-audio": {"transport": "aop-dma", "formats": ["S24_LE"], "sense_batch": False, "speaker_headroom": 0,
+                               "speaker_irq": False},
+ }
+ # The self-check's probe order on the speaker PCM.

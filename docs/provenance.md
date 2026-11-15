@@ -135,6 +135,46 @@ private; epoch 2 deliberately holds this local build until an explicit return
 to a v5-capable repository package. Libfprint and the upstream patches retain
 their respective licenses; this integration does not relicense them.
 
+### Native speaker, SCO and media contracts
+
+The speaker transport patch targets the schema-compatible protection source
+`54c911c7a7098af91f90375ae1b8d09f8588c79a` above. Its description follows
+the pinned kernel's
+[`HW_CFG_T6050`](https://github.com/rolotrealanis98/linux/blob/8ab10100a4c1c944797e3fc8345589aff57777df/sound/soc/apple/t8152_aop_audio.rs),
+not another board's measured audio timing. The native voicing capture reuses
+that source's offline AudioUnit host and per-AID differential rig. Original
+upstream MIT notices remain in acquired source; no native executable or tuning
+is redistributed. Native 26C5035r AudioDSP is not byte-equivalent to recorded
+older references; parity cannot be inherited.
+
+`prepare-bluetooth-native.py` pins same-build System/Cryptex executable, profile
+and cache-span hashes. The SCO patch records those hashes and native function
+addresses as evidence for standard framing, attributes and completion flags.
+Those are file/cache-analysis addresses, not runtime MMIO authorization.
+The patch targets the selected T6050 driver; standard native rings/framing are
+implemented, private HDR negotiation is not. Native reverse engineering does
+not qualify headset voice hardware.
+
+The ProRes ownership patch is informed by
+[`PR925`](https://github.com/aurora-silicon/linux/pull/925#issuecomment-6724518116),
+whose parked depth-one experiment reports invalid DART translations. This
+candidate avoids shared reset and retains uncertain DMA until machine recovery;
+it does not copy unproven reset constants or authorize first DMA. Native media
+inspection pins the retained compressed/decoded kernelcollection and function
+spans, deriving new AVE command sizes and ProRes/ANE acquisition facts without
+shipping Apple code or relaxing layout/digest guards.
+
+Native ALS illumination loading on 26C5035r requires 193 bytes and is separate
+from its color path. The
+[Asahi extractor](https://github.com/AsahiLinux/asahi-installer/blob/3262ca299aa1ea6334d48b28d6a2671428753ff3/asahi_firmware/als.py)
+preserves HmCA separately and supplies no justified conversion. Native camera
+platform tables and
+[upstream sensor detection](https://github.com/aurora-silicon/linux/commit/8cb07827e780267de659fe0325cd215fb50c3659)
+do not establish J716s AP/exclave takeover or privacy. Current
+[loader admission](https://github.com/aurora-silicon/aura/blob/2175c4832c5c190aace8abd0c5fa44e475e6b865/src/kboot.c)
+still excludes this exact board/build. Paired-macOS acquisition remains private,
+source/identity-bound evidence, never a substitute for hardware qualification.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

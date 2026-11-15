@@ -173,7 +173,7 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
         require(record(kernel / name) == {"size": item["bytes"], "sha256": item["sha256"]}, "candidate artifact differs: " + name)
     baseline_artifacts = ((".config",) if variant in candidate_boot.ONE_SHOT_PARAMETERS else
                           ("t6050-j716s.dtb",) if variant == "bringup" else
-                          () if variant == "touchid" else
+                          () if variant in candidate_boot.TOUCHID_VARIANTS else
                           (".config", "t6050-j716s.dtb"))
     for name in baseline_artifacts:
         require(build["artifacts"][name]["sha256"] == identity["kernel_artifacts"][name]["sha256"], "candidate changed baseline artifact: " + name)

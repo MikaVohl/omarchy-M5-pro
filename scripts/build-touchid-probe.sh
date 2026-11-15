@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Reads the installed boot DTB; no installation, boot selection or device access.
 set -euo pipefail
-if (( $# != 1 )) || [[ $1 != --build && $1 != --build-sensor && $1 != --build-touchid ]]; then
-  echo "Usage: $0 {--build|--build-sensor|--build-touchid}" >&2
+if (( $# != 1 )) || [[ $1 != --build && $1 != --build-sensor && $1 != --build-touchid && $1 != --build-touchid-sco ]]; then
+  echo "Usage: $0 {--build|--build-sensor|--build-touchid|--build-touchid-sco}" >&2
   exit 2
 fi
 case $1 in
   --build) variant=sep-probe ;;
   --build-sensor) variant=sep-sensor ;;
   --build-touchid) variant=touchid ;;
+  --build-touchid-sco) variant=touchid-sco ;;
 esac
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 [[ $(uname -m) == aarch64 ]] || { echo 'Native ARM64 host required' >&2; exit 1; }
@@ -17,8 +18,8 @@ out=$root/outputs/kernel-$variant-candidate
 [[ ! -e "$out" ]] || { echo "Refusing existing output: $out" >&2; exit 1; }
 commit=8ab10100a4c1c944797e3fc8345589aff57777df
 printf '%s  %s\n' 06acab85a9e668010fe9e664d9fc92a15d506a986faab8b9659edd4bbcaaeac2 "$root/work/sources/kernel-$commit.tar.gz" | sha256sum -c -
-# touchid is the daily bringup kernel plus Touch ID: it keeps bringup's exact config.
-if [[ $variant == touchid ]]; then
+# Touch ID variants preserve bringup's exact config and sensor DT contract.
+if [[ $variant == touchid || $variant == touchid-sco ]]; then
   config=outputs/kernel-bringup-candidate/.config
   config_sha256=e7ff6452a937de895bf351f8539636cbf98998493835b80113da5d5ca4ecba14
 else
@@ -99,7 +100,7 @@ artifacts = {name: {"sha256": digest(out / name), "bytes": (out / name).stat().s
 variant = os.environ["PROBE_VARIANT"]
 patches = {name: digest(pathlib.Path("/exchange/patches") / name) for name in os.environ["PATCHES"].split()}
 manifest = {"schema": 1, "commit": "8ab10100a4c1c944797e3fc8345589aff57777df", "variant": variant, "qualification": "unqualified-experimental", "kernel_release": (out / "kernel.release").read_text().strip(), "artifacts": artifacts, "patches": patches}
-if variant == "touchid":
+if variant in ("touchid", "touchid-sco"):
     # Runtime options come from modprobe.d; the profile refuses trusted keys, the FileVault API and an unguarded xART.
     safety = {"persistent_selection_allowed": True, "sensor_enabled": True, "enrollment_allowed": True, "matching_allowed": True,
               "required_module_options": {"xart_writes": 1, "provision_keybag": 1, "trusted_keys": 0, "filevault_api": 0, "xart_guard": 1}}

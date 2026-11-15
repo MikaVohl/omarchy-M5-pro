@@ -1,0 +1,275 @@
+From: Omarchy J716s bringup
+Subject: [PATCH] media: apple: prores: quarantine uncertain depth-one DMA
+
+Base: 8ab10100a4c1c944797e3fc8345589aff57777df
+
+Do not mistake MODE_OFF, ERROR, a bad fetch cursor, or a failed reset for a
+DMA completion fence. Retain the vb2 ready queues, active m2m context,
+scheduler slot and runtime-PM reference after uncertainty. Pin the module
+and fixed platform device once; disable manual unbind. Late DONE cannot
+release a quarantine. STREAMOFF/close wait at the existing m2m cancellation
+barrier; this is intentional retention until a full machine reset.
+
+Unlike parked PR #925, do not issue a shared APR/DART power-domain reset:
+its depth-one trial saw TTBR-invalid faults and supplies no quiescence or
+translation-restoration witness. There is no retry or reclaim operation.
+Reject system sleep while a descriptor is owned and block publication while
+pausing the scheduler. Flush the existing DONE ACK before retiring a job.
+
+This patch repairs ownership, not T6050 hardware admission or qualification.
+First DMA remains blocked pending a reviewed exact-board trial and native
+reset/DART, descriptor, statistics and power/boot contract. No firmware,
+module load, device access or boot selection is authorized by this patch.
+
+References:
+https://github.com/aurora-silicon/linux/pull/925
+https://github.com/aurora-silicon/linux/pull/925#issuecomment-6724518116
+
+---
+diff --git a/drivers/media/platform/apple/prores/apple-prores-drv.c b/drivers/media/platform/apple/prores/apple-prores-drv.c
+--- a/drivers/media/platform/apple/prores/apple-prores-drv.c
++++ b/drivers/media/platform/apple/prores/apple-prores-drv.c
+@@ -24,7 +24,6 @@
+ #include <linux/platform_device.h>
+ #include <linux/pm_domain.h>
+ #include <linux/pm_runtime.h>
+-#include <linux/reset.h>
+ #include <linux/sizes.h>
+ #include <linux/slab.h>
+ #include <linux/spinlock.h>
+@@ -344,7 +343,6 @@
+ 	/* Rows applied at power-up, per APRI block: built-in or the file's. */
+ 	const struct apr_tunable *tunables[APRI_MAX_BLOCKS];
+ 	size_t num_tunables[APRI_MAX_BLOCKS];
+-	struct reset_control *reset;
+ 	struct dev_pm_domain_list *pd_list;
+ 	int irq[2];
+ 
+@@ -365,7 +363,8 @@
+ 	struct apr_ctx *active;	/* job in the engine, or NULL */
+ 	u32 head;		/* next free ring offset */
+ 	bool ring_ready;	/* engine registers programmed since power-up */
+-	bool broken;		/* timed out with no way to reset */
++	bool broken;		/* uncertain DMA: retain ownership until machine reset */
++	bool suspending;	/* prevents publication while system sleep pauses m2m */
+ 	unsigned long started;	/* jiffies at submission */
+ 	struct delayed_work watchdog;
+ };
+@@ -579,28 +578,57 @@
+ }
+ 
+ /*
++ * No documented idle witness makes MODE_OFF or a power-domain reset a DMA
++ * fence. In particular SCODEC also owns the APR DART. Never reset it and
++ * then reuse or release translations on an uncertain completion.
++ * Called once with hw_lock held; active, the m2m slot and PM stay owned.
++ */
++static void apr_quarantine(struct apr_dev *apr)
++{
++	struct apr_ctx *ctx = apr->active;
++
++	if (apr->broken)
++		return;
++	apr->broken = true;
++	apr->ring_ready = false;
++	apr_write(apr, APR_REG_IRQ_ENABLE, 0);
++	apr_write(apr, APR_REG_MODE, APR_MODE_OFF);
++	/* Flush containment writes; this is NOT proof that DMA has stopped. */
++	apr_read(apr, APR_REG_MODE);
++	/* Keep the fixed platform device and devres alive until machine reset. */
++	__module_get(THIS_MODULE);
++	get_device(apr->dev);
++	vb2_queue_error(v4l2_m2m_get_src_vq(ctx->fh.m2m_ctx));
++	vb2_queue_error(v4l2_m2m_get_dst_vq(ctx->fh.m2m_ctx));
++	dev_err(apr->dev, "uncertain DMA: buffers, scheduler and power retained until machine reset; no reset or retry\n");
++}
++
++/*
+  * Claim the active job if the engine has finished it. Returns the context to
+  * finish, or NULL. Called with hw_lock held.
+  */
+-static struct apr_ctx *apr_take_done(struct apr_dev *apr, int *err)
++static struct apr_ctx *apr_take_done(struct apr_dev *apr, u32 *observed)
+ {
+ 	struct apr_ctx *ctx = apr->active;
+ 	u32 status, tail;
+ 
+-	if (!ctx)
++	*observed = 0;
++	if (!ctx || apr->broken)
+ 		return NULL;
+ 	status = apr_read(apr, APR_REG_IRQ_STATUS);
+ 	if (!status)
+ 		return NULL;
++	*observed = status;
+ 	apr_write(apr, APR_REG_IRQ_STATUS, status);
++	/* Flush the W1C ACK before allowing another completion observation. */
+ 	tail = apr_read(apr, APR_REG_RING_TAIL) & APR_RING_PTR_MASK;
+-	*err = 0;
+ 	if (status != APR_IRQ_DONE || tail != apr->head) {
+ 		dev_err_ratelimited(apr->dev,
+ 				    "job failed: status %#x tail %#x head %#x st %#x/%#x\n",
+ 				    status, tail, apr->head,
+ 				    apr_read(apr, APR_REG_ST0), apr_read(apr, APR_REG_ST1));
+-		*err = -EIO;
++		apr_quarantine(apr);
++		return NULL;
+ 	}
+ 	apr->active = NULL;
+ 	return ctx;
+@@ -610,40 +638,36 @@
+ {
+ 	struct apr_dev *apr = data;
+ 	struct apr_ctx *ctx;
+-	int err = 0;
++	u32 observed;
+ 
+ 	spin_lock(&apr->hw_lock);
+-	ctx = apr_take_done(apr, &err);
++	ctx = apr_take_done(apr, &observed);
+ 	spin_unlock(&apr->hw_lock);
+ 	if (!ctx)
+-		return IRQ_NONE;
++		return observed ? IRQ_HANDLED : IRQ_NONE;
+ 	cancel_delayed_work(&apr->watchdog);
+-	apr_finish_job(apr, ctx, err);
++	apr_finish_job(apr, ctx, 0);
+ 	return IRQ_HANDLED;
+ }
+ 
+-/*
+- * Backstop for a lost interrupt and for hangs. A hung engine is reset
+- * through its power domain and reprogrammed; without a reset line the
+- * device refuses further jobs rather than reuse memory it may still own.
+- */
++/* Backstop for lost interrupts; an unproven completion quarantines DMA. */
+ static void apr_watchdog(struct work_struct *work)
+ {
+ 	struct apr_dev *apr = container_of(work, struct apr_dev, watchdog.work);
+ 	struct apr_ctx *ctx;
+ 	unsigned long flags;
+-	int err = 0;
++	u32 observed;
+ 
+ 	spin_lock_irqsave(&apr->hw_lock, flags);
+-	ctx = apr_take_done(apr, &err);
++	ctx = apr_take_done(apr, &observed);
+ 	if (ctx) {
+ 		spin_unlock_irqrestore(&apr->hw_lock, flags);
+ 		dev_warn_once(apr->dev, "completion found without an interrupt\n");
+-		apr_finish_job(apr, ctx, err);
++		apr_finish_job(apr, ctx, 0);
+ 		return;
+ 	}
+ 	ctx = apr->active;
+-	if (!ctx) {
++	if (!ctx || apr->broken) {
+ 		spin_unlock_irqrestore(&apr->hw_lock, flags);
+ 		return;
+ 	}
+@@ -655,19 +679,8 @@
+ 	dev_err(apr->dev, "job timed out: head %#x tail %#x st %#x/%#x\n",
+ 		apr->head, apr_read(apr, APR_REG_RING_TAIL),
+ 		apr_read(apr, APR_REG_ST0), apr_read(apr, APR_REG_ST1));
+-	apr->active = NULL;
+-	apr_write(apr, APR_REG_IRQ_ENABLE, 0);
+-	apr_write(apr, APR_REG_MODE, APR_MODE_OFF);
+-	apr->ring_ready = false;
+-	/* No new job can start until this one is finished below. */
++	apr_quarantine(apr);
+ 	spin_unlock_irqrestore(&apr->hw_lock, flags);
+-	if (!apr->reset || reset_control_reset(apr->reset)) {
+-		dev_err(apr->dev, "engine cannot be reset, refusing further jobs\n");
+-		spin_lock_irqsave(&apr->hw_lock, flags);
+-		apr->broken = true;
+-		spin_unlock_irqrestore(&apr->hw_lock, flags);
+-	}
+-	apr_finish_job(apr, ctx, -ETIMEDOUT);
+ }
+ 
+ static void apr_device_run(void *priv)
+@@ -699,9 +712,10 @@
+ 	memset(out, 0, 8);
+ 
+ 	spin_lock_irqsave(&apr->hw_lock, flags);
+-	if (apr->broken) {
++	if (apr->broken || apr->suspending) {
++		ret = apr->broken ? -EIO : -EBUSY;
+ 		spin_unlock_irqrestore(&apr->hw_lock, flags);
+-		apr_finish_job(apr, ctx, -EIO);
++		apr_finish_job(apr, ctx, ret);
+ 		return;
+ 	}
+ 	/*
+@@ -1163,6 +1177,10 @@
+ 
+ 	/* Registers do not survive the power domain going off. */
+ 	spin_lock_irqsave(&apr->hw_lock, flags);
++	if (apr->active) {
++		spin_unlock_irqrestore(&apr->hw_lock, flags);
++		return -EBUSY;
++	}
+ 	apr->ring_ready = false;
+ 	spin_unlock_irqrestore(&apr->hw_lock, flags);
+ 	return 0;
+@@ -1176,19 +1194,40 @@
+ static int apr_suspend(struct device *dev)
+ {
+ 	struct apr_dev *apr = dev_get_drvdata(dev);
++	unsigned long flags;
++	int ret;
+ 
++	/* Do not wait forever in m2m_suspend on a quarantined scheduler slot. */
++	spin_lock_irqsave(&apr->hw_lock, flags);
++	if (apr->active) {
++		spin_unlock_irqrestore(&apr->hw_lock, flags);
++		return -EBUSY;
++	}
++	apr->suspending = true;
++	spin_unlock_irqrestore(&apr->hw_lock, flags);
+ 	v4l2_m2m_suspend(apr->m2m_dev);
+-	return pm_runtime_force_suspend(dev);
++	ret = pm_runtime_force_suspend(dev);
++	if (ret) {
++		spin_lock_irqsave(&apr->hw_lock, flags);
++		apr->suspending = false;
++		spin_unlock_irqrestore(&apr->hw_lock, flags);
++		v4l2_m2m_resume(apr->m2m_dev);
++	}
++	return ret;
+ }
+ 
+ static int apr_resume(struct device *dev)
+ {
+ 	struct apr_dev *apr = dev_get_drvdata(dev);
++	unsigned long flags;
+ 	int ret;
+ 
+ 	ret = pm_runtime_force_resume(dev);
+ 	if (ret)
+ 		return ret;
++	spin_lock_irqsave(&apr->hw_lock, flags);
++	apr->suspending = false;
++	spin_unlock_irqrestore(&apr->hw_lock, flags);
+ 	v4l2_m2m_resume(apr->m2m_dev);
+ 	return 0;
+ }
+@@ -1314,9 +1353,6 @@
+ 		if (ret < 0)
+ 			return dev_err_probe(dev, ret, "failed to attach power domains\n");
+ 	}
+-	apr->reset = devm_reset_control_get_optional_exclusive(dev, NULL);
+-	if (IS_ERR(apr->reset))
+-		return dev_err_probe(dev, PTR_ERR(apr->reset), "reset\n");
+ 
+ 	/* Every buffer the engine touches goes through its DART. */
+ 	if (!device_iommu_mapped(dev))
+@@ -1414,6 +1450,8 @@
+ 		.name = APR_NAME,
+ 		.of_match_table = apr_of_match,
+ 		.pm = pm_ptr(&apr_pm_ops),
++		/* A quarantine must not be dismantled through manual driver unbind. */
++		.suppress_bind_attrs = true,
+ 	},
+ };
+ module_platform_driver(apr_driver);

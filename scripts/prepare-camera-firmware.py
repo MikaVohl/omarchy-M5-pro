@@ -9,6 +9,10 @@ read ISP MMIO, firmware RAM or camera devices, enable a node, install firmware,
 reset or start the ISP, capture frames, alter a boot selection, or reboot.
 The 2224 setfile is only a candidate: ADT sensor-type 118 is a platform ID,
 NOT proof of IMX958 sensor identity or the 26C5035r camera firmware ABI.
+capture-macos collects only paired-macOS ISP/DART/privacy registry subtrees,
+camera kext Info.plists and exact-build tuning; it never opens a camera session.
+check-macos validates that private acquisition after returning to Linux. This
+does not authorize a static overlay, exclave takeover or watchdog servicing.
 """
 import argparse
 import hashlib
@@ -32,6 +36,18 @@ SETFILE_MAGIC = 0x22240106
 SETFILE_SIZE = 0x6ff4
 PADDED_SIZE = (SETFILE_SIZE + 63) & ~63
 MAX_INPUT = 32 * 1024 * 1024
+MACOS_REPORT = "camera-macos-acquisition.json"
+MACOS_QUERIES = (
+    ("ioreg/isp0-devicetree.plist", ("-p", "IODeviceTree", "-n", "isp0")),
+    ("ioreg/dart-isp0-devicetree.plist", ("-p", "IODeviceTree", "-n", "dart-isp0")),
+    ("ioreg/isp0-service.plist", ("-n", "isp0")),
+    ("ioreg/isp-service.plist", ("-n", "isp")),
+    ("ioreg/dynamic-pil.plist", ("-p", "IODeviceTree", "-n", "dynamic-pil")),
+    ("ioreg/exbrightpil.plist", ("-p", "IODeviceTree", "-n", "exbrightpil")),
+)
+MACOS_UNQUALIFIED = {"sensor_identity_proven": False, "firmware_abi_qualified": False,
+                     "privacy_indicator_qualified": False, "coprocessor_quiescence_verified": False,
+                     "memory_handoff_qualified": False, "installed": False, "hardware_touched": False}
 
 
 def sha(data):
@@ -42,7 +58,7 @@ def encoded(report):
     return (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
 
 
-def read_regular(path, private=False):
+def read_regular(path, private=False, allow_empty=False):
     if ".." in Path(path).parts:
         raise ValueError("Input path must not contain traversal")
     path = Path(os.path.abspath(path))
@@ -51,7 +67,7 @@ def read_regular(path, private=False):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not 0 < info.st_size <= MAX_INPUT:
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not (0 if allow_empty else 1) <= info.st_size <= MAX_INPUT:
             raise ValueError("Input must be a bounded single-link regular file")
         if private and (info.st_mode & 0o077 or info.st_uid != os.geteuid()):
             raise ValueError("Package input is not private and owned by this process's user")
@@ -171,12 +187,90 @@ def system_source(root):
     return daemon, version
 
 
-def save_new(output, files):
-    # Same exclusive private staging convention as prepare-als-calibration.py.
+def als_tool():
     spec = importlib.util.spec_from_file_location("als_camera_staging", PROJECT / "scripts/prepare-als-calibration.py")
     als = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(als)
-    als.save_new(output, files)
+    return als
+
+
+def save_new(output, files):
+    als_tool().save_new(output, files)
+
+
+def capture_macos(output, unit_sha256):
+    als = als_tool()
+    profile = json.loads((PROJECT / "profiles/j716s.json").read_text())
+    identity, platform_plist = als.macos_identity(profile, unit_sha256)
+    files = {"source/platform.plist": platform_plist}
+    observations = []
+    for name, selector in MACOS_QUERIES:
+        command = ["/usr/sbin/ioreg", "-r", "-a", "-l", *selector]
+        data = subprocess.check_output(command, timeout=30)
+        if len(data) > MAX_INPUT:
+            raise ValueError("Camera IORegistry source exceeds its size bound")
+        # Empty output is the documented ioreg result for an absent object.
+        roots = plistlib.loads(data) if data else []
+        if not isinstance(roots, list):
+            raise ValueError("Expected IORegistry plist roots")
+        files[name] = data
+        observations.append({"file": name, "command": command, "roots": len(roots)})
+    extensions = Path("/System/Library/Extensions")
+    for path in sorted(extensions.iterdir()):
+        if path.suffix != ".kext" or not any(word in path.name.lower() for word in ("camera", "isp")):
+            continue
+        data = read_regular(path / "Contents/Info.plist")
+        if not isinstance(plistlib.loads(data), dict):
+            raise ValueError("Invalid camera kext Info.plist")
+        files["kexts/" + path.name + "/Info.plist"] = data
+    version = read_regular(Path("/System/Library/CoreServices/SystemVersion.plist"))
+    if plistlib.loads(version).get("ProductBuildVersion") != BUILD:
+        raise ValueError("Paired System build changed during acquisition")
+    daemon = read_regular(Path("/usr/sbin/appleh16camerad"))
+    blob, offsets = extract_setfile(daemon)
+    files.update({"source/SystemVersion.plist": version, "source/appleh16camerad": daemon, FIRMWARE: blob})
+    report = {**identity, "kind": "paired-macos-read-only-camera-acquisition", **MACOS_UNQUALIFIED,
+              "observations": observations, "daemon_offsets": offsets,
+              "files": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in files.items()},
+              "missing_contract": ["AP/exclave stream ownership and quiescent firmware memory handoff",
+                                   "26C5035r command ABI and CH_INFO_GET sensor version",
+                                   "visible privacy indicator bound to the ISP capture watchdog"]}
+    save_new(output, {**files, MACOS_REPORT: encoded(report)})
+    return {"prepared": True, "manifest_sha256": sha(encoded(report)), **MACOS_UNQUALIFIED}
+
+
+def check_macos(package, report_sha256):
+    raw = read_regular(package / MACOS_REPORT, private=True)
+    if sha(raw) != report_sha256:
+        raise ValueError("Camera acquisition differs from its external SHA256 anchor")
+    report = json.loads(raw)
+    identity = current_identity()
+    if (report.get("schema") != 1 or report.get("kind") != "paired-macos-read-only-camera-acquisition" or
+            any(report.get(key) != identity[key] for key in ("board", "model", "macos_build", "unit_serial_sha256")) or
+            any(report.get(key) is not value for key, value in MACOS_UNQUALIFIED.items())):
+        raise ValueError("Camera acquisition unit, build or qualification claims differ")
+    files = report.get("files")
+    required = {"source/platform.plist", "source/SystemVersion.plist", "source/appleh16camerad", FIRMWARE,
+                *(name for name, _ in MACOS_QUERIES)}
+    if not isinstance(files, dict) or not required.issubset(files):
+        raise ValueError("Camera acquisition lacks targeted source evidence")
+    data = {}
+    for name, record in files.items():
+        if name not in required and not (name.startswith("kexts/") and name.endswith(".kext/Info.plist")):
+            raise ValueError("Unexpected camera acquisition source")
+        data[name] = read_regular(package / name, private=True,
+                                 allow_empty=any(name == query for query, _ in MACOS_QUERIES))
+        if record != {"bytes": len(data[name]), "sha256": sha(data[name])}:
+            raise ValueError("Camera acquisition source bytes differ")
+    model, serial = als_tool().platform_identity(data["source/platform.plist"])
+    if model != identity["model"] or sha(serial.encode("ascii")) != identity["unit_serial_sha256"]:
+        raise ValueError("Camera IORegistry unit differs")
+    if plistlib.loads(data["source/SystemVersion.plist"]).get("ProductBuildVersion") != BUILD:
+        raise ValueError("Camera acquisition System build differs")
+    blob, offsets = extract_setfile(data["source/appleh16camerad"])
+    if data[FIRMWARE] != blob or report.get("daemon_offsets") != offsets:
+        raise ValueError("Camera acquisition candidate tuning differs")
+    return {"checked": True, **MACOS_UNQUALIFIED}
 
 
 def prepare(output, system_root, kernel):
@@ -230,6 +324,13 @@ def check(package, report_sha256, kernel):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+    macos = commands.add_parser("capture-macos", help="paired macOS: read-only targeted ISP/privacy acquisition")
+    macos.add_argument("--output", type=Path, required=True)
+    macos.add_argument("--unit-serial-sha256", required=True,
+                       help="unit_serial_sha256 from the Linux camera provenance; never a board-wide override")
+    macos_check = commands.add_parser("check-macos", help="Linux: check same-unit paired acquisition; no camera access")
+    macos_check.add_argument("package", type=Path)
+    macos_check.add_argument("--manifest-sha256", required=True)
     prep = commands.add_parser("prepare")
     prep.add_argument("--system-root", type=Path, required=True)
     prep.add_argument("--output", type=Path, required=True)
@@ -240,9 +341,14 @@ def main():
         command.add_argument("--kernel", type=Path, default=PROJECT / "work/sources/kernel")
     args = parser.parse_args()
     try:
-        report = prepare(args.output, args.system_root, args.kernel) if args.command == "prepare" else check(args.package, args.manifest_sha256, args.kernel)
+        if args.command == "capture-macos":
+            report = capture_macos(args.output, args.unit_serial_sha256)
+        elif args.command == "check-macos":
+            report = check_macos(args.package, args.manifest_sha256)
+        else:
+            report = prepare(args.output, args.system_root, args.kernel) if args.command == "prepare" else check(args.package, args.manifest_sha256, args.kernel)
         print(json.dumps(report, indent=2))
-    except (OSError, ValueError, KeyError, struct.error, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, struct.error, plistlib.InvalidFileException, subprocess.SubprocessError) as error:
         parser.exit(1, f"Camera preparation refused: {error}\n")
 
 

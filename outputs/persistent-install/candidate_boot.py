@@ -44,11 +44,12 @@ BLUETOOTH_CONFIG = frozenset({"CONFIG_BT_BREDR", "CONFIG_BT_LE", "CONFIG_BT_RFCO
                             "CONFIG_BT_BNEP", "CONFIG_INPUT_MISC", "CONFIG_INPUT_UINPUT"})
 CONFIG_DELTA = BLUETOOTH_CONFIG | {"CONFIG_BT_LE_L2CAP_ECRED"}
 TOUCHID_RELEASE = BASELINE_RELEASE + "-touchid"
+TOUCHID_VARIANTS = frozenset({"touchid", "touchid-sco"})
 SEP_SENSOR_PATCH_SHA256 = "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5"
 # Variants that carry the Bluetooth config delta (and its two configs on the ESP).
-CONFIG_VARIANTS = frozenset({"bringup", "touchid"})
+CONFIG_VARIANTS = frozenset({"bringup", *TOUCHID_VARIANTS})
 # Variants whose DTB is their own build's, bound to the build manifest.
-BUILD_DTB_VARIANTS = frozenset({"sep-probe", "sep-sensor", "touchid"})
+BUILD_DTB_VARIANTS = frozenset({"sep-probe", "sep-sensor", *TOUCHID_VARIANTS})
 VARIANTS = {
     "open-wifi": {"release": CANDIDATE_RELEASE, "patches": {"kernel-j716s-open-wifi.patch": PATCH_SHA256}},
     "bringup": {"release": BRINGUP_RELEASE, "patches": {
@@ -69,6 +70,15 @@ VARIANTS = {
         "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
         "kernel-j716s-sep-sensor.patch": SEP_SENSOR_PATCH_SHA256,
         "kernel-j716s-touchid.patch": "43d0bd360349b123270766c3551983121c453be10581cbe8ef50d610e0f29486"}},
+    "touchid-sco": {"release": BASELINE_RELEASE + "-touchid-sco", "patches": {
+        "kernel-j716s-open-wifi.patch": PATCH_SHA256,
+        "kernel-j716s-bluetooth.patch": BLUETOOTH_PATCH_SHA256,
+        "kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce",
+        "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
+        "kernel-j716s-sep-sensor.patch": SEP_SENSOR_PATCH_SHA256,
+        "kernel-j716s-touchid.patch": "43d0bd360349b123270766c3551983121c453be10581cbe8ef50d610e0f29486",
+        "kernel-j716s-bluetooth-sco.patch": "573c10d0d5212c738823d3423ea0399637ff4227bfa4fa8fbfafca81c64cb87d",
+        "kernel-j716s-prores-dma-ownership.patch": "be5b22ad12046c8013182c21d58fc5ded9f481d71a53401c05cd60a3599f1483"}},
 }
 
 
@@ -243,7 +253,8 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
         require(isinstance(artifact, dict) and set(artifact) == {"bytes", "sha256"}
                 and type(artifact["bytes"]) is int and artifact["bytes"] >= 0
                 and sha256(artifact["sha256"]), "invalid candidate build artifact")
-    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), "touchid": (),
+    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",),
+                          **{name: () for name in TOUCHID_VARIANTS},
                           **{name: (".config",) for name in ONE_SHOT_PARAMETERS}}
     for name in baseline_artifacts.get(variant, (".config", "t6050-j716s.dtb")):
         baseline = identity["kernel_artifacts"][name]

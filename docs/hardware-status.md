@@ -13,12 +13,12 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | Connected headset, audible A2DP playback and user-observed play/pause toast; RFCOMM/BNEP sockets work | HFP mic test failed: pinned transport lacks SCO packet support; LE/PAN traffic and prolonged reconnect remain unqualified |
+| Bluetooth | Connected headset/A2DP and controls observed; exact native standard-SCO transport candidate built | New SCO kernel not booted; microphone qualification pending; private HDR-SCO unsupported |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
-| Video encode / ANE | Exact-build 2,880-byte ProRes APRI candidate prepared; AVE firmware-generation and ANE preload-layout mismatches established | No engine startup; diagnostic patch undeployed; acquisition/ABI guards remain |
-| Battery / sensors | Battery, cpufreq and WFI telemetry present; same-unit HmCA recovered | HmCA is not proven installable ALS CalibrationData; TTPD semantics remain unknown |
-| Audio | Same-unit AID41 tuning recovered and offline six-channel Spp3 blob compiled | 26C5035r differential parity unvalidated; no protection-runtime or playback pass; speakers stay disabled |
+| Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
+| Battery / sensors | Battery/cpufreq/WFI telemetry; native illuminance calibration requires 193 bytes | Same-unit HmCA is 9,962 bytes, not directly usable illuminance calibration; ALS operation and TTPD semantics unqualified |
+| Audio | Same-unit AID41 blob compiled; six-amp/twelve-sense silent wiring and fail-closed interlock checks passed | Native 26C5035r DSP parity missing; normal speaker playback remains disabled |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
@@ -493,4 +493,100 @@ camera handoff/identity/privacy/capture; genuine ALS CalibrationData; Centauri
 SCO transport. USB-C/PD/charging/external displays and suspend still need
 attended physical qualification. Prepared files alone do not complete these
 features; speakers remain guarded and no unqualified engine was started.
+
+## Speaker-priority bringup — 2026-11-14
+
+Root can read `Speaker Protection` and `Speaker Protection Interface` on the
+running `touchid` kernel. Their absence in an unprivileged mixer listing was
+not a missing kernel interface. The selector initially served the legacy
+volume lock; protection was not granted.
+
+`speakerguardd-j716s-transport.patch` adds only the native T6050 transport
+description to the pinned schema-compatible protection source. The kernel's
+`HW_CFG_T6050` specifies six S24_LE playback slots and twelve S16_LE sense
+slots, DMAengine PCMs and firmware-owned serializer clocks. IRQ scheduling
+is not enabled without cadence qualification. Live DT/tuning derivation
+produced card `AppleJ716`, Spp3, physical/unit map 0–5 and V/I ports 0–11.
+
+The upstream silent self-check then passed on hardware with a single 50 ms
+lease and continuous capture armed before **zero-only** playback. It checked
+amplifier registers, sense switches and format, bound wiring
+`cbba18ec53f0a442` to this kernel/blob, and released its grant. A separate
+zero-only smoke stopped renewals, then killed the owner in another case:
+
+| Case | Observed withdrawal and playback stop | Final speaker PCM |
+| --- | --- | --- |
+| Lease expiry | 53.0 ms | SETUP |
+| Owner process death | 76.5 ms | Closed |
+
+These are observed timings including userspace detection, not worst-case
+latency certification under load. The original interface and audio services
+were restored; the disposable smoke script was removed. No normal playback
+sink, unmasked protection daemon or nonzero speaker sample was introduced.
+The private self-check is bound to `7.3.0-j716s-8ab10100a4c1-touchid`; a
+different kernel needs a fresh check, not inherited qualification.
+
+The same-unit 26C5035r AudioDSP executable differs from every recorded older
+reference hash. The voicing check passes compiler completeness, finite
+output, silence, limiter ceiling and reset determinism; its locked 512-frame
+quantum is required. Native macOS parity is still refused. The protection
+project remains alpha; neither the silent pass nor the new transport entry
+bypasses DSP/controller qualification.
+
+`capture-speaker-reference.py` prepared a real private, hash-anchored AID41
+request with the same-unit tuning and a deterministic 24.15-second program.
+Its paired-macOS mode compiles the native offline AudioUnit host and renders
+the selected speaker strip; Linux comparison uses the upstream per-AID
+attestation rig. It rejects foreign/stale/tampered references, modelled
+AudioUnits, non-finite output and incomplete audio. This first rig covers
+**full-volume voicing only**, not controller-state parity, a volume sweep,
+acoustic quality or authorization to play. Native capture has not run.
+
+### Exact native source findings
+
+Retained System, Preboot and its plaintext APFS Cryptex OS were opened
+read-only; System/Cryptex identify 26C5035r. Encrypted Data, FileVault
+credentials and Apple security policy were not accessed. Private copies and
+source hashes were retained; proprietary executables/calibration are excluded
+from publication.
+
+The native Centauri profile and executable/cache disassembly establish SCO
+TX/RX rings 3/9, nine slots, 724-byte in-place footers and tagged completions.
+TX carries exactly standard HCI header plus payload. RX validates metadata
+attributes and preserves packet-status bits. The new transport validates
+ownership before reuse, retains queued data on ring-full and fails closed on
+bad completions. HCI credit events remain unchanged; private four-byte HDR
+mode is unsupported. Hardware voice is still unqualified.
+
+ProRes now has an isolated depth-one quarantine repair: uncertain completion
+retains buffers/mappings, scheduler/context and PM, and never resets shared
+SCODEC/APR/DART or retries. Late DONE cannot release quarantine; system sleep
+is refused while active. STREAMOFF/close may intentionally block until machine
+recovery. Native quiescence and descriptor-generation admission remain
+unqualified; no first DMA or APRI installation occurred.
+
+Native AVE Process AVC/HEVC sizes are `0x6e08`/`0x78c8`, each 16 bytes larger
+than the pin. Equal total ANE preload size does not prove DATA relocation or
+patchbay compatibility. Native camera platform 118 appears in both tables,
+but does not prove sensor identity, AP/exclave takeover, ABI or privacy.
+Native ALS illuminance loading copies exactly 193 bytes to property `0x0b`;
+the separate color path uses `0xfb`. Direct HmCA installation is refused.
+Paired-macOS capture tools collect the missing evidence without opening a
+camera session or inventing calibration.
+
+### Linux candidate selection
+
+The complete `7.3.0-j716s-8ab10100a4c1-touchid-sco` build passed artifact
+checksums and target preflight, including exact sensor DT delta and the
+unchanged Bluetooth-only config delta. Under explicit owner authorization,
+deployment selected it as the next persistent Linux default. Publication and
+boot-guard checks passed. Previous Touch ID payload/helper bytes and modules,
+baseline/rescue and the trial marker were preserved. No reboot was issued;
+the running kernel remains `touchid`. The new kernel's Bluetooth, graphics,
+Touch ID and recovery behavior must be checked after the attended return.
+
+The owner chose paired-macOS offline captures after this Linux checkpoint.
+Private transfer inputs are encrypted locally; neither the transfer key nor
+firmware/calibration/reference data belongs in GitHub. Speaker playback,
+headset microphone, encoders/ANE, camera and ALS are not marked finished.
 

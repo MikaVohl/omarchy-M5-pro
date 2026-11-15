@@ -1,6 +1,15 @@
 # Changelog
 
 
+## Speaker-priority native bringup — 2026-11-14
+
+- Recognize the exact T6050 speaker transport and observe six-amp/twelve-sense silent hardware wiring, lease-expiry and owner-death containment; keep audible playback guarded pending native DSP/controller parity.
+- Add same-unit, source-pinned native speaker reference preparation/capture/comparison without audio-device access; record full-volume-only scope and private-data restrictions.
+- Derive standard Centauri SCO from exact native profile/code/cache evidence; implement TX/RX, tagged ownership, ring-full handling and fail-closed lifecycle without altering HCI credits or guessing firmware rings.
+- Add a Touch ID-preserving `touchid-sco` build/deployment variant with strict config/DT/pin authorization and prior-Touch-ID rollback.
+- Quarantine uncertain ProRes DMA without shared reset or buffer/PM/scheduler release; retain first-DMA gates. Record exact AVE Process-size extensions and unresolved ANE relocation/boot contracts.
+- Add native camera/ALS acquisition and enforce the observed 193-byte illuminance contract; refuse direct HmCA conversion/installation and keep camera ownership/privacy unqualified.
+
 ## Qualification record integration
 
 - Integrate the archived factory-data session `2026-11-15T03-50-42-200Z_01a1dd54-2718-7505-9803-008623374b39`; retain its existing source and detailed records without repeating hardware tests.

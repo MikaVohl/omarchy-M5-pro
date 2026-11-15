@@ -755,6 +755,62 @@ enrolled, verify it with `fprintd-verify` instead of rerunning enrollment.
 Enrollment and configured PAM files do not by themselves prove each actual
 authentication surface or matching after a cold boot.
 
+## Speaker-priority and SCO qualification
+
+Normal speakers remain guarded. The `touchid` kernel already has the root-only
+protection interface; the T6050 transport patch and silent hardware/interlock
+checks do not admit unvalidated DSP or controller behavior. Use the same-unit
+factory bundle, never another chassis's thermal profile.
+
+`scripts/capture-speaker-reference.py prepare` accepts the pinned protection
+archive, collector archive, private factory package and hash-bound compiler.
+It produces a new private portable reference request. On the exact paired
+macOS, `capture` verifies the independent request-manifest hash, unit/build and
+native AudioDSP hash before compiling the offline AudioUnit host. It opens no
+audio device. `compare` verifies the returned manifest and uses a matching
+compiler/voicing-render revision. Preparation/comparison needs NumPy; native
+capture needs Python3 and Xcode command-line tools. See each subcommand's
+`--help` for its required paths and external hash anchors.
+
+The first capture covers full-volume voicing only. Controller-state parity,
+volume-dependent laws, generated graph timing and protected playback remain
+qualification gates. Do not install an attestation by editing its verdict,
+strip new tuning metadata, or unmask playback from a silent-test pass alone.
+Each new kernel/blob needs its own silent wiring check. Keep raw tuning,
+reference audio and transfer keys private; if using an encrypted transfer,
+verify its independently retained ciphertext hash before decrypting/extracting.
+
+The isolated standard-SCO candidate preserves Touch ID's config and sensor
+DT contract and adds the native transport and ProRes ownership quarantine:
+
+```sh
+# Fresh workspace only; existing candidate outputs are refused.
+JOBS=6 bash scripts/build-touchid-probe.sh --build-touchid-sco
+sudo python3 -B scripts/deploy-bringup.py --variant touchid-sco \
+  --baseline-config outputs/kernel-open-wifi-candidate/.config
+# Explicit authorization of an unbooted default, only after the check passes:
+sudo python3 -B scripts/deploy-bringup.py --variant touchid-sco --activate \
+  --acknowledge-unbooted-risk --baseline-config outputs/kernel-open-wifi-candidate/.config
+# Restore the retained, authorized previous Touch ID/default payload:
+sudo python3 -B scripts/deploy-bringup.py --variant touchid-sco --rollback
+```
+
+No command above reboots or replaces the running kernel's modules. After an
+attended boot, verify the new release, actual boot guard, display/input/network,
+Touch ID and speaker guarding before a bounded headset microphone check.
+Private four-byte HDR-SCO is unsupported; normal HCI credits stay with the core.
+Transport faults stop the driver and require fresh firmware, not repeated HCI
+down/up. ProRes quarantine does not authorize DMA: failed completion can retain
+STREAMOFF/close until physical machine recovery. Do not install/start APRI yet.
+
+For the same paired-macOS visit, camera `capture-macos` and ALS
+`capture-evidence` require the Linux unit-serial SHA256 supplied independently.
+Camera stays off; empty/missing registry evidence is recorded, not converted to
+support. Only one genuine **193-byte** illuminance CalibrationData may enter
+the ALS installer. HmCA/color data is not interchangeable. Installation alone
+does not activate or qualify ALS; kernel acquisition and lux behavior still
+need their own checks.
+
 ## Source maintenance and checks
 
 ```sh

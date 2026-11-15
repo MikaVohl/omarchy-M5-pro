@@ -383,3 +383,44 @@ retained rather than counted as a second qualification run.
 The archived factory-data tests above were not rerun here. Fingerprint reboot
 matching and macOS return after Linux enrollment are still unqualified.
 
+## Speaker-priority source and hardware checks — 2026-11-14
+
+- Actual upstream silent speaker self-check passed: six amps, twelve sense
+  channels, S24 playback, continuous capture first, zero samples only.
+- Separate zero-only lease-expiry and owner-death checks both withdrew the
+  grant and stopped playback. Original interface/audio services restored.
+- Real same-unit native reference request prepared. Eight reference-admission
+  regressions passed; native macOS rendering has not run.
+- Camera acquisition: ten tests passed. Port/ALS: 24 tests passed, including
+  exact 193-byte admission and direct HmCA/size refusal before publication.
+- Media/native parsing: twenty tests passed. Actual retained-source inspector
+  established AVE's 16-byte Process extensions and guarded ANE/ProRes facts.
+- ProRes production IRQ/watchdog/publication/PM/cancellation harness passed
+  under ASan/UBSan; all eight deliberately broken negative controls failed
+  assertions. Initial extractor/kernel-doc and missing-ACK observability
+  errors were repaired; only the failed harness was rerun.
+- Eighteen Bluetooth privacy/capture tests and five exact native acquisition
+  tests passed. The production SCO C harness passed after correcting unsigned
+  header-size constants in its host boundary. It checks framing, tagged
+  completion/ownership, ring-full/wrap, allocation failure, malformed input,
+  caller skb ownership, command/ACL behavior and close/flush/reopen.
+- Twenty-eight bringup/SCO authorization and fourteen persistent-selection
+  regressions passed. Build-shell syntax passed.
+- Full Fedora43 ARM64 LLVM21.1.8/Rust1.99.1 `touchid-sco` kernel, DTB and signed
+  modules built. All eight artifacts plus build manifest/provenance hashes
+  passed. Exact config, baseline KIS topology and build-bound sensor DT delta
+  passed the real read-only target composition/boot-guard checks.
+- Actual pinned native Bluetooth acquisition succeeded from the retained
+  read-only System/Cryptex, without radio/audio operation.
+- Authorized persistent publication passed the real composition, exact-DT,
+  baseline/rescue/partition/config/module binding and installed boot-guard
+  checks. Prior Touch ID/default/runtime bytes retained; no reboot or marker
+  arming. Physical `touchid-sco` boot remains unobserved.
+- An encrypted private transfer bundle roundtripped byte-for-byte on Linux;
+  native macOS decryption/capture is not yet exercised. Generated inputs and
+  transfer key remain outside publication.
+
+No speaker DSP/controller parity, nonzero playback, headset microphone,
+encoder/ANE startup, camera capture or ALS activation is claimed. New kernel
+qualification requires its own attended boot and hardware checks.
+

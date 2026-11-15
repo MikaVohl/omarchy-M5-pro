@@ -245,6 +245,8 @@ class CaptureBundleTests(unittest.TestCase):
             self.assertEqual(summary["sco_headers"][0]["packets"], 1)
             self.assertEqual(summary["files"]["control.jsonl"],
                              {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
+            self.assertTrue(any("t2026-CentauriBeta.plist" in limitation for limitation in summary["limitations"]))
+            self.assertTrue(any("no SCO footer/audio capture" in limitation for limitation in summary["limitations"]))
             monitor_socket.send.assert_not_called()
 
     def test_capture_error_and_record_limit_remain_incomplete(self):

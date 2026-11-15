@@ -16,6 +16,12 @@ Example (does not initiate any Bluetooth activity):
 Monitor TX precedes the driver send callback, so TX counts do NOT prove delivery.
 RX counts only cover frames the driver submitted to HCI, not unopened DMA rings.
 The monitor cannot recover firmware SCO framing, RX attributes or ring credits.
+
+The exact-build native ring/framing contract is now extracted in
+prepare-bluetooth-native.py and implemented by kernel-j716s-bluetooth-sco.patch.
+The passive HCI monitor still cannot prove DMA delivery or qualify the mic.
+Native source acquisition reads only pinned system binaries/configuration;
+neither tool initiates an audio session or changes firmware/radio state.
 """
 import argparse
 from collections import Counter
@@ -394,6 +400,8 @@ def capture(monitor, directory, index, duration, context):
             "HFP RFCOMM codec negotiation is not collected: all ACL payload is dropped.",
             "Voice setting/air coding is not alone proof of mSBC codec negotiation.",
             "Monitor metadata cannot qualify firmware SCO framing, attributes, credits or microphone support.",
+            "Exact native SCO framing comes from bluetoothd; rings from AirshipDK's t2026-CentauriBeta.plist; completion ownership from Airship, not the Beta launcher or kernelcollection.",
+            "prepare-bluetooth-native.py acquires only pinned static native sources; no SCO footer/audio capture is used to derive the source patch.",
             "If no relevant session occurred during this window, this is an idle capture, not a SCO repro.",
         ],
     }

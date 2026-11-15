@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import plistlib
 import tempfile
 import unittest
 
@@ -18,6 +19,12 @@ spec.loader.exec_module(avd)
 spec = importlib.util.spec_from_file_location("prores_firmware_edges", PROJECT / "scripts/prepare-prores-firmware.py")
 prores = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prores)
+spec = importlib.util.spec_from_file_location("media_macos_capture", PROJECT / "scripts/capture-media-macos.py")
+media_capture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(media_capture)
+spec = importlib.util.spec_from_file_location("media_native_contract", PROJECT / "scripts/inspect-media-native.py")
+media_native = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(media_native)
 
 
 class ImageVectorTests(unittest.TestCase):
@@ -206,6 +213,81 @@ class ProResPrivateInputTests(unittest.TestCase):
                 self.assertEqual((root / "receipt").read_bytes(), b"first")
             finally:
                 os.close(parent)
+
+
+class MediaAcquisitionTests(unittest.TestCase):
+    @staticmethod
+    def fixture(root):
+        # Synthetic registry metadata is a checker fixture, not a target capture.
+        serial = "MEDIA-CHECKER-FIXTURE"
+        unit = prores.sha(serial.encode("ascii"))
+        files = {"platform.plist": plistlib.dumps([{"model": b"Mac17,8\0", "IOPlatformSerialNumber": serial}]),
+                 "SystemVersion.plist": plistlib.dumps({"ProductBuildVersion": "26C5035r"}),
+                 "kext-AppleProResHW.kext.plist": plistlib.dumps({"CFBundleVersion": "627"})}
+        observations = []
+        for name, selector in media_capture.QUERIES:
+            files[name] = plistlib.dumps([])
+            observations.append({"file": name, "command": ["/usr/sbin/ioreg", "-r", "-a", "-l", *selector],
+                                 "roots": 0, "available": False})
+        report = {"schema": 1, "kind": "paired-macos-read-only-media-acquisition",
+                  "model": "Mac17,8", "board": "j716s", "macos_build": "26C5035r",
+                  "unit_serial_sha256": unit, "ioreg_platform_sha256": prores.sha(files["platform.plist"]),
+                  "kernel_commit": prores.KERNEL_COMMIT, "observations": observations,
+                  "missing_contract": media_capture.MISSING, **media_capture.UNQUALIFIED,
+                  "files": {name: {"bytes": len(data), "sha256": prores.sha(data)} for name, data in files.items()}}
+        raw = media_capture.encoded(report)
+        media_capture.save_new(root, {**files, media_capture.REPORT: raw})
+        return unit, report, prores.sha(raw)
+
+    def test_valid_checker_fixture_never_authorizes_dma(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "bundle"
+            unit, report, anchor = self.fixture(root)
+            result = media_capture.check(root, anchor, unit)
+            self.assertTrue(result["checked"])
+            self.assertFalse(result["first_dma_authorized"])
+            self.assertTrue(all(not value for value in media_capture.UNQUALIFIED.values()))
+            self.assertEqual(len(report["observations"]), len(media_capture.QUERIES))
+
+    def test_external_anchor_and_unit_mismatch_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "bundle"
+            unit, _, anchor = self.fixture(root)
+            for changed_anchor, changed_unit in (("0" * 64, unit), (anchor, "0" * 64)):
+                with self.subTest(anchor=changed_anchor), self.assertRaises(ValueError):
+                    media_capture.check(root, changed_anchor, changed_unit)
+
+    def test_forged_authorization_paths_availability_and_source_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "bundle"
+            unit, report, _ = self.fixture(root)
+            for kind in ("authorize", "traversal", "availability", "integrity"):
+                changed = json.loads(media_capture.encoded(report))
+                if kind == "authorize":
+                    changed["first_dma_authorized"] = True
+                elif kind == "traversal":
+                    changed["files"]["../foreign.plist"] = {"bytes": 1, "sha256": "0" * 64}
+                elif kind == "availability":
+                    changed["observations"][0]["available"] = True
+                else:
+                    changed["files"]["SystemVersion.plist"]["sha256"] = "0" * 64
+                raw = media_capture.encoded(changed)
+                (root / media_capture.REPORT).write_bytes(raw)
+                with self.subTest(kind=kind), self.assertRaises(ValueError):
+                    media_capture.check(root, prores.sha(raw), unit)
+
+    def test_registry_wrong_shapes_and_native_unpinned_source_refuse(self):
+        self.assertEqual(media_capture.registry_roots(b""), 0)
+        for value in ({}, [1], "not registry"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                media_capture.registry_roots(plistlib.dumps(value))
+        with self.assertRaises(ValueError):
+            media_native.source_facts(b"not the pinned decoded collection")
+        for engine in media_native.FIRMWARE_PINS:
+            with self.subTest(engine=engine), self.assertRaises(ValueError):
+                media_native.firmware_facts(b"not the pinned IM4P", engine)
+        self.assertEqual(media_native.AVE_LENGTHS[3:5], (0x6e08, 0x78c8))
+        self.assertTrue(prores.FIRST_DMA_BLOCKERS)
 
 
 if __name__ == "__main__":

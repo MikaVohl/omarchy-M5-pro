@@ -158,6 +158,18 @@ class TouchidBootTests(BringupBootTests):
         self.assertEqual(self.verify(), f.receipt)
 
 
+class TouchidScoBootTests(TouchidBootTests):
+    """SCO retains Touch ID's config and build-bound sensor DT contract."""
+    VARIANT = "touchid-sco"
+
+    def test_touchid_only_build_cannot_claim_sco_authorization(self):
+        f = self.fixture
+        f.receipt["build_manifest"]["patches"] = copy.deepcopy(candidate.VARIANTS["touchid"]["patches"])
+        f.store_receipt()
+        with self.assertRaisesRegex(RuntimeError, "build pins"):
+            self.verify()
+
+
 class BringupPublicationTests(unittest.TestCase):
     def test_validation_failure_restores_previous_default_not_baseline(self):
         with tempfile.TemporaryDirectory() as temporary:

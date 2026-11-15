@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Check/deploy a pinned persistent kernel variant (bringup, touchid), or restore its previous default.
+"""Check/deploy a pinned persistent kernel variant, or restore its previous default.
 
 bringup is the Bluetooth kernel. touchid is bringup plus the J716s sensor wiring
 and Touch ID SEP profile; its DTB delta is checked exactly before deployment.
+touchid-sco adds native SCO transport and fail-closed ProRes DMA ownership;
+it does not authorize ProRes first DMA or enable speakers.
 
 Never reboot, arm a trial, replace a running kernel's modules, or alter baseline
 root/rescue dependencies. Deployment is experimental, not physical qualification.
@@ -28,9 +30,11 @@ stage = selection.stage
 candidate = stage.candidate_boot
 require = stage.require
 HELPER = stage.GUARD.parent / "candidate_boot.py"
-DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE), "touchid": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE)}
+DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE),
+              "touchid": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE),
+              "touchid-sco": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE)}
 # Defaults a rollback may restore besides the baseline payload.
-PREVIOUS_VARIANTS = ("open-wifi", "bringup")
+PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid")
 
 
 def select(variant):
@@ -137,7 +141,7 @@ def deploy(activate, baseline_config):
     with tempfile.TemporaryDirectory(prefix="j716s-" + VARIANT + "-") as temporary:
         files, receipt, modules = stage.build_candidate(temporary, identity, deployment,
                                                        variant=VARIANT, baseline_config=baseline_config)
-        if VARIANT == "touchid":
+        if VARIANT in candidate.TOUCHID_VARIANTS:
             # Exactly the sensor trial's DT delta (pinned SPI2/GPIO wiring, path-matched renumbering).
             spec = importlib.util.spec_from_file_location("j716s_sep_stage", PROJECT / "scripts/stage-sep-probe.py")
             sep_stage = importlib.util.module_from_spec(spec)
