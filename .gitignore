@@ -33,6 +33,7 @@ outputs/kernel-sep-sensor-candidate/
 outputs/kernel-touchid-candidate/
 work/touchid-src/
 work/omarchy-mac-overlay/
+work/libfprint-aurora/
 outputs/rootfs/
 outputs/firmware/
 outputs/boot-candidate/loader/
