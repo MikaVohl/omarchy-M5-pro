@@ -471,6 +471,69 @@ open `/dev/sep-bio`, write `complete_attach`, enroll, or reset enclave state.
 Capture the first registration result and arrange a cold power cycle/macOS
 check afterward. See [recovery](recovery.md#attended-sep-trial-recovery).
 
+## Sensor-authentication SEP candidate
+
+Release `7.3.0-j716s-8ab10100a4c1-sep-sensor` adds one bounded, opt-in
+(`apple_sep.sensor_auth_probe=1`) sensor identity/nonce/authentication attempt
+on top of the discovery parameters. It never uploads the sensor patch or
+calibration, enrolls, matches, writes enclave storage or retries. A refusal or
+any non-idle sensor state stops the attempt; a stop is not authentication success.
+The pinned source authenticates before patch upload; J716s sensor states are
+not yet observed on hardware.
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-sensor
+```
+
+The build runs the actual Rust admission fixture in the guest before compiling.
+Its DT adds `fingerprint@0` on SPI2, enables the SPI2 and nub-GPIO power domains,
+switches SPI2 to the reference clock, frees AP GPIO 138 for the sensor interrupt,
+and makes nub GPIO a plain GPIO provider (pin 21 only; no interrupt controller).
+Staging admits exactly that delta plus path-matched phandle renumbering, and
+refuses if any baseline node uses nub GPIO as an interrupt parent.
+
+### Same-unit factory material
+
+The normal bringup kernel exposes only a 16-byte address/length descriptor for
+the local policy manifest, pointing outside every exposed or reserved region.
+Preparation refuses rather than reading that memory. Boot the staged discovery
+candidate once (no `modprobe apple_sep` is needed); its SEP alias makes Aura
+forward `local-policy-manifest` bytes. On that boot:
+
+```sh
+sudo python3 -B scripts/prepare-sensor-firmware.py prepare \
+  --device /dev/nvme0n1pN --partition-uuid <iBootSystemContainer GPT UUID> \
+  --output <fresh private directory>
+```
+
+Retain the printed provenance SHA256 separately. The firmware binding records
+only that the current mBoot/OS labels match the pinned 26C5035r profile;
+`current_restore_build_verified` stays `false`.
+
+Rearming discovery requires the installed validator to match this repository
+and the previous arming record to be reviewed and moved aside:
+
+```sh
+sudo python3 -B scripts/stage-sep-probe.py --update-validator
+sudo mv /etc/j716s/sep-probe-arming.json /etc/j716s/sep-probe-arming-<date>.reviewed.json
+```
+
+### Stage, then arm separately
+
+Still on the discovery boot (the package check needs the forwarded policy):
+
+```sh
+sudo python3 -B scripts/stage-sep-probe.py --variant sep-sensor --stage --acknowledge-risk \
+  --sensor-package <package directory> --sensor-provenance-sha256 <retained digest>
+```
+
+Staging installs the anchored package under `/var/lib/j716s/sep-sensor-material/`
+(root-only) and its two containers under `/usr/lib/firmware/apple/`, binds them
+and the unit serial digest into `/etc/j716s/sep-sensor.json`, and rolls back
+every created file on failure. Arming, cancellation and the attended cold boot
+follow the discovery procedure with `--variant sep-sensor`. Persistent selection
+remains forbidden.
+
 ## Source maintenance and checks
 
 ```sh

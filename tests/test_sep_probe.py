@@ -127,7 +127,7 @@ class SepProbeTests(unittest.TestCase):
                         del parameters[key]
                     else:
                         parameters[key] = value
-                    with self.assertRaisesRegex(RuntimeError, "safe discovery command-line flags"):
+                    with self.assertRaisesRegex(RuntimeError, "safe command-line flags"):
                         self.validate(parameters)
 
     def test_matching_chosen_is_mandatory_even_with_bound_default(self):

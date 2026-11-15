@@ -22,7 +22,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Not qualified | No claim of support |
-| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms | Sensor remains disabled; no enrollment, matching or persistent biometric support |
+| Touch ID / SEP | J716s discovery trial attached; 12 endpoints advertised, ready in 1442 ms. Sensor-auth candidate built, not yet staged or booted | No sensor authentication observed; no enrollment, matching or persistent biometric support |
 | Stability / repeated recovery | Not qualified | No broad daily-use or repeated retained-macOS recovery campaign |
 
 The opt-in open-network Wi-Fi kernel
