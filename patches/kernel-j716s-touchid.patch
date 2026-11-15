@@ -40,6 +40,29 @@
          assert_eq!(picked(&[b"apple,t6050"]), None);
      }
  
+--- i/drivers/soc/apple/sensor_shim.c
++++ w/drivers/soc/apple/sensor_shim.c
+@@ -77,7 +77,10 @@ bool sep_sensor_auth_firmware_names_valid(void)
+ 	return valid;
+ }
+ 
+-/* Refuse incorrect wiring before spi_setup or acquiring/driving any GPIO. */
++/*
++ * Refuse incorrect wiring before spi_setup or acquiring/driving any GPIO. Both
++ * the one-shot authentication probe and normal Touch ID bind through here.
++ */
+ static int sep_sensor_auth_wiring(struct spi_device *spi)
+ {
+ 	struct device_node *np = spi->dev.of_node, *parent;
+@@ -86,7 +89,7 @@ static int sep_sensor_auth_wiring(struct spi_device *spi)
+ 	bool valid;
+ 	int rc;
+ 
+-	if (sensor_auth_probe != 1 || sep_sensor_mode != ~0U || !np ||
++	if (sep_sensor_mode != ~0U || !np ||
+ 	    !sep_sensor_auth_node_is(np, SEP_AUTH_SENSOR_NODE) ||
+ 	    spi_get_chipselect(spi, 0) != 0 || spi->mode != SPI_MODE_2 ||
+ 	    spi->max_speed_hz != SEP_SENSOR_HZ ||
 --- i/drivers/soc/apple/sep.rs
 +++ w/drivers/soc/apple/sep.rs
 @@ -3547,6 +3547,20 @@ fn init(module: &'static ThisModule) -> impl PinInit<Self, Error> {

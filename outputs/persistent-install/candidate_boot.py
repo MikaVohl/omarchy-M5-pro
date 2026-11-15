@@ -68,7 +68,7 @@ VARIANTS = {
         "kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce",
         "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
         "kernel-j716s-sep-sensor.patch": SEP_SENSOR_PATCH_SHA256,
-        "kernel-j716s-touchid.patch": "dc881cba55de54c5dc1b2c87d6203f8591198c92343cc2fc9ae358b7121b838b"}},
+        "kernel-j716s-touchid.patch": "43d0bd360349b123270766c3551983121c453be10581cbe8ef50d610e0f29486"}},
 }
 
 
