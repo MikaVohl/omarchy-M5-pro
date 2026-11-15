@@ -34,6 +34,7 @@ outputs/kernel-touchid-candidate/
 outputs/kernel-touchid-sco-candidate/
 outputs/kernel-touchid-sco-spk-candidate/
 outputs/kernel-touchid-sco-spk-hfp-candidate/
+outputs/kernel-bringup-full-candidate/
 work/touchid-src/
 work/omarchy-mac-overlay/
 work/libfprint-aurora/

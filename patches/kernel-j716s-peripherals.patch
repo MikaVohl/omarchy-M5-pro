@@ -1,0 +1,166 @@
+From: J716s bring-up integration
+Subject: drm/apple, thunderbolt: preserve T6050 route suppliers and withdraw dead DP tunnels
+
+Base: Linux 8ab10100a4c1c944797e3fc8345589aff57777df.
+Sources:
+ https://github.com/aurora-silicon/linux/pull/1745
+ https://github.com/aurora-silicon/linux/pull/1930
+
+Backport the reviewed combo-PHY soft dependency (#1745) and the DP tunnel
+withdrawal query/wait (#1930). The latter is an open upstream proposal,
+not J716s hardware qualification. Keep the existing session-generation
+check before teardown and retain the provider's immutable binding/token
+and adapter-lock contract. Unlike the proposed polling helper, a direct
+DP-alt connection with no binding keeps one completion wait.
+
+No DT, role forcing, controller admission, register routing, KIS/DFU,
+power/GPIO, native DMA ownership or speaker policy changes are made.
+The same-unit live tree already enables the four external DCPs and its
+ATC1/ATC2 routes; module order and dead-tunnel withdrawal are the fixes.
+
+diff --git a/drivers/gpu/drm/apple/apple_drv.c b/drivers/gpu/drm/apple/apple_drv.c
+--- a/drivers/gpu/drm/apple/apple_drv.c
++++ b/drivers/gpu/drm/apple/apple_drv.c
+@@ -2120,7 +2120,9 @@
+  * crossbar. Without this, initramfs generators leave it out, it loads only
+  * from the root filesystem, and a DCP probe that waits past the deferred
+  * probe timeout (an encrypted root's passphrase prompt) gives up its routes.
++ * The same holds for the routes' PHYs: on T6050 they are the combo PHYs of
++ * atc-t6050-dp, which appledrm does not otherwise depend on.
+  * DCP also asks for the battery temperature once while it starts (see
+  * dcp_pmu_temperature()), so have the SMC battery registered by then.
+  */
+-MODULE_SOFTDEP("pre: mux-apple-display-crossbar macsmc-power");
++MODULE_SOFTDEP("pre: mux-apple-display-crossbar atc-t6050-dp macsmc-power");
+diff --git a/drivers/gpu/drm/apple/dcp.c b/drivers/gpu/drm/apple/dcp.c
+--- a/drivers/gpu/drm/apple/dcp.c
++++ b/drivers/gpu/drm/apple/dcp.c
+@@ -2003,3 +2003,64 @@
++/*
++ * Has the Thunderbolt DP tunnel this pipeline was handed been taken down?
++ * Its provider knows at once, while the detach that follows waits for the
++ * connect in progress on this pipeline. tb_lock pins the binding through
++ * the query; the provider takes its adapter lock, as set_active does.
++ */
++static bool dcp_tb_tunnel_withdrawn(struct apple_dcp *dcp)
++{
++	typeof(apple_dp_tunnel_binding_live) *live;
++	bool gone = false;
++
++	guard(mutex)(&dcp->tb_lock);
++	if (!dcp->tb_dpin_ctx)
++		return false;
++	live = symbol_get(apple_dp_tunnel_binding_live);
++	if (live) {
++		gone = !live(dcp->tb_dpin_ctx);
++		symbol_put(apple_dp_tunnel_binding_live);
++	}
++	return gone;
++}
++
++#define DCP_LINKCFG_POLL_MS	50
++
++/*
++ * Wait up to @timeout for DCP's link configuration of @port, returning what
++ * wait_for_completion_timeout() would. A watched Thunderbolt tunnel that
++ * disappears ends the wait promptly and sets *@withdrawn: no link comes on
++ * it, and a later release can coincide with a firmware retry and go
++ * unanswered. Direct DP, compact and late-HPD paths keep their single wait.
++ */
++static unsigned long dcp_dptx_wait_linkcfg(struct apple_dcp *dcp, u32 port,
++					 unsigned long timeout, bool watch_tunnel,
++					 bool *withdrawn)
++{
++	unsigned long deadline = jiffies + timeout;
++	long left;
++
++	*withdrawn = false;
++	if (watch_tunnel) {
++		guard(mutex)(&dcp->tb_lock);
++		watch_tunnel = !!dcp->tb_dpin_ctx;
++	}
++	if (!watch_tunnel)
++		return wait_for_completion_timeout(&dcp->dptxport[port].linkcfg_completion,
++						   timeout);
++	for (;;) {
++		left = (long)(deadline - jiffies);
++		if (left <= 0)
++			return 0;
++		if (wait_for_completion_timeout(&dcp->dptxport[port].linkcfg_completion,
++						min_t(unsigned long, left,
++						      msecs_to_jiffies(DCP_LINKCFG_POLL_MS))))
++			return max_t(long, (long)(deadline - jiffies), 1);
++		if (dcp_tb_tunnel_withdrawn(dcp)) {
++			*withdrawn = true;
++			return 0;
++		}
++	}
++}
++
+ /*
+  * Connect DPTX port @port. On failure, @retryable (if given) tells whether
+  * the attempt left nothing outstanding in the firmware, so that a later
+@@ -2015,7 +2076,7 @@
+ 	/* T8122 dcpext: HPD only after the link wait, see dcp_ext_dptx_607() */
+ 	bool late_hpd = dcp_ext_dptx_607(dcp);
+ 	bool t8132 = dcp_is_t8132_ext(dcp);
+-	bool compact;
++	bool compact, withdrawn;
+ 	unsigned long timeout;
+ 	u64 generation;
+ 	u8 dfp_port;
+@@ -2164,11 +2225,17 @@
+ 	timeout = dcp_uses_t6020_tunnel_flow(dcp) ?
+ 		  DPTX_TUNNEL_CONNECT_TIMEOUT : DPTX_CONNECT_TIMEOUT;
+-	ret = wait_for_completion_timeout(&dcp->dptxport[port].linkcfg_completion,
+-					  timeout);
++	ret = dcp_dptx_wait_linkcfg(dcp, port, timeout, !compact && !late_hpd,
++				    &withdrawn);
+ 	/* A revoked wait must not disconnect or publish readiness for a new session. */
+ 	if (!dcp_connect_session_valid(dcp, session, cable, recovery))
+ 		return -ESTALE;
+-	if (!ret && compact) {
++	if (!ret && withdrawn) {
++		dev_info(dcp->dev,
++			 "dcp_dptx_connect: port %u: the DP tunnel went before link configuration\n",
++			 port);
++		ret = -ENOLINK;
++		goto out_withdraw;
++	} else if (!ret && compact) {
+ 		/* Without a sink the link is configured once one arrives. */
+ 		dev_dbg(dcp->dev,
+ 			"dcp_dptx_connect: no link configuration on port %u yet\n", port);
+diff --git a/drivers/thunderbolt/apple.c b/drivers/thunderbolt/apple.c
+--- a/drivers/thunderbolt/apple.c
++++ b/drivers/thunderbolt/apple.c
+@@ -833,3 +833,14 @@
++bool apple_dp_tunnel_binding_live(void *data)
++{
++	const struct apple_dpin_binding *binding = data;
++	struct apple_dpin_ctx *c = binding->ctx;
++
++	guard(mutex)(&c->lock);
++	return c->state.alive &&
++	       apple_dpin_token_access(&c->tokens, binding->generation);
++}
++EXPORT_SYMBOL_GPL(apple_dp_tunnel_binding_live);
++
+ static bool apple_dpin_provider_get(void *data)
+ {
+ 	struct apple_dpin_binding *binding = data;
+diff --git a/include/linux/soc/apple/dp-tunnel.h b/include/linux/soc/apple/dp-tunnel.h
+--- a/include/linux/soc/apple/dp-tunnel.h
++++ b/include/linux/soc/apple/dp-tunnel.h
+@@ -41,3 +41,12 @@
++/*
++ * Thunderbolt glue: is the tunnel handed to appledrm with @binding still
++ * requested? It is not from the moment the tunnel is deactivated, before
++ * the detach that follows reaches appledrm. Caller must keep its binding
++ * pinned through the query. Takes the DP IN adapter's lock, as @set_active
++ * does; may sleep.
++ */
++bool apple_dp_tunnel_binding_live(void *binding);
++
+ /* The sink raised IRQ_HPD on the tunnel's DP IN adapter. */
+ #define APPLE_DP_TUNNEL_IRQ_HPD		BIT(0)
+ /* The HPD level of the tunnel's DP IN adapter changed to @hpd. */

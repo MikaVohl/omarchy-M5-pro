@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | 7.3.0-j716s-8ab10100a4c1; all 18 CPUs booted | Pinned source; newly generated module signing keys change build bytes |
+| Kernel | `7.3.0-j716s-8ab10100a4c1-touchid-sco-spk-hfp`; all 18 CPUs booted | Isolated full bringup candidate preparing; newly generated module signing keys change build bytes |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -16,7 +16,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
-| Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
+| Video encode / ANE | Exact-build AVE compatibility and bounded ANE build/IPC ports prepared; private firmware checked | No new engine startup; ANE live TEXT identity must first be measured in observation-only mode; ProRes acquisition still unqualified |
 | Battery / sensors | Genuine same-unit 193-byte ALS calibration installed; ALS child rebound and changing finite lux readings observed | Basic illuminance reporting works; absolute accuracy, colour temperature and TTPD semantics unqualified |
 | Audio | `touchid-sco-spk` booted; fresh silent wiring/native voicing/512-frame graph checks passed; protected Mac speaker tone heard by owner | Preview enabled with live supervisor; pause/death withdrawal observed; volume-sweep, acoustic/lifetime and repeated-boot certification remain unqualified |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
@@ -825,4 +825,57 @@ command `0xfe10` and its dispatch reference. Correct T6050 routing selection
 and the successful native setup sequence remain unresolved. Its presence is
 not authorization to send a guessed payload; no vendor command, controller
 reset, new kernel patch or further recording retry was issued.
+
+## Broad guarded bringup preparation - 2026-11-15
+
+Six independent source slices investigated AVE, ANE, thermal/fans, peripherals,
+camera/voice and G17 reclamation. The isolated `bringup-full` recipe retains
+the working patch stack and exact sensor/KIS DT contract; no board routing,
+unsafe fan setting or deep-sleep admission was guessed.
+
+- AVE's retained TEXT geometry/CRC matches upstream #1747. The native +16-byte
+  command extension is real, including shifted HEVC fields; it is not padded
+  into the old writer. The selected protocol is explicitly the upstream-tested
+  26A428 compatibility path, with paired geometry/CRC, loader ownership and
+  pristine DATA guards. Native extension semantics and local encoding remain
+  unqualified until an actual bounded encode/software-decode test.
+- ANE admits exact known build geometry/pins and maps the larger IPC window,
+  but bounds parsing by firmware-requested bytes. The full candidate requires
+  `ane_t6021.ane_observe_only=1`: recognized reserved TEXT may be hashed, but
+  engine acquisition is refused before observer MMIO, power or DMA. Retained
+  file TEXT differs from the upstream live pin and is never promoted.
+- G17 kept graphs retain the existing M5 identity pin without allocating
+  another; backing reclamation requires exact owner/epoch/slot/control/run-list
+  identity and consumed final release. Graphs/identity survive until firmware
+  stop and destruction remains deferred off-lock. No logging-only timeout
+  suppression or M5-excluded lower-window reclaim was added.
+- Peripherals gain PHY softdep and source-justified withdrawn DP tunnel
+  handling. Actual boot DT already enables all four external DCPs and relevant
+  ATC routes. No Aura/DT route flip was justified; HDMI converter ownership and
+  SD manual-enable/DART stream identity remain unresolved. The owner can attach
+  HDMI/Thunderbolt later, but no attachments are available for a physical pass.
+- Exact-unit ADT proves 18 CPUs and thermal effort lanes 0/1/2. PMP/report
+  nodes remain disabled and their endpoint/index/startup contract unresolved;
+  effort-only properties would leave fallback caps. That preparatory patch is
+  unselected. Read-only fan targets and unproved mode/handback semantics do not
+  justify manual-control admission or an unsafe module-parameter bypass.
+- Camera native proxy/SID/firmware observations do not prove sensor identity,
+  exclave release or fail-closed privacy. Voice dispatch/callers are identified,
+  but null prerequisite slots do not establish the correct route by elimination.
+  Private inspection helpers preserve both hardware admission refusals.
+
+Ten obsolete ESP diagnostics, unreferenced by receipts and selected/baseline/
+rescue payloads, were copied into a root-private Linux archive, hash-verified
+and removed from the ESP with owner authorization. Working candidate closures,
+modules and boot identities were unchanged; guard validation passed and free
+ESP space increased from 39 to 89 MiB without partition changes.
+
+The approved built-in microphone test delivered 480,000 finite frames per
+channel over 10 seconds: channels 0/1 were about -61 dBFS RMS and channel 2
+silent. The sample-limit recorder exited 1 without stderr; complete sample
+delivery is not a clean CLI success. Protected playback of channel 0 used
+temporary listening gain only and succeeded. The owner was not speaking, so
+this is ambient data-flow evidence, not intelligibility/calibration proof.
+Buffers were deleted; no further recording/playback or routing changes while
+the owner listens to AirPods music in a cafe.
 

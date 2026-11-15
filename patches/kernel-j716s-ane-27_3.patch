@@ -1,0 +1,498 @@
+From: Omarchy J716s bringup
+Subject: [PATCH] accel/ane: admit pinned 27.3 geometry and bound IPC to its request
+
+Base: 8ab10100a4c1c944797e3fc8345589aff57777df
+Apply after kernel-j716s-media-handoff-diagnostics.patch. The prepared kernel
+source is never edited; this patch targets that immutable base plus diagnostics.
+
+Port the geometry/build table and larger IPC request from upstream PR #1746:
+https://github.com/aurora-silicon/linux/pull/1746
+Its reviewed J714s iBoot TEXT pin is the only new admission pin. The retained
+J716s IM4P TEXT fca6a59af20e3964067d300ec75c8c1bf88bfdaf55b37d2e34808dd1b725b90d
+is NOT a live preload pin and is not admitted. J716s live TEXT remains unmeasured.
+The two layouts both end at DVA 0x1000036c000; no DATA patchbay is invented.
+
+Fix the review boundary: allocate the 0x14000-byte page-aligned IPC capacity,
+then pass only the requested bytes to the actual transport/parser and init
+record. Reject truncated/unaligned tables, overlapping/out-of-range rings,
+overflowing/un-aligned/overlapping preload ranges, and mixed-build layouts.
+The selected TEXT pin stays fixed across metadata rereads, copies and restarts.
+
+Refusal diagnostics read TEXT only from a recognized exact-size layout with
+both enabled, nonreusable no-map reservations outside System RAM and the ANE
+identity. A digest mismatch is logged, not enrolled. Existing raw-loader,
+kexec/kdump, PMGR/PWGATE/DART and lifetime/ownership checks remain mandatory.
+For a first safe live-pin observation use the boot-only/read-only option
+ane_t6021.ane_observe_only=1: even a verified loader handoff then refuses
+acquisition before observer MMIO mapping, power, DMA or engine access. This
+option adds no writable loader marker, memory reader or pin override.
+
+This source candidate is not built, installed, booted or hardware-qualified.
+Host regressions: scripts/test-ane-27_3.py --kernel FRESH_PATCHED_SOURCE
+---
+diff --git a/drivers/accel/ane/ane_fw_platform.h b/drivers/accel/ane/ane_fw_platform.h
+--- a/drivers/accel/ane/ane_fw_platform.h
++++ b/drivers/accel/ane/ane_fw_platform.h
+@@ -22,6 +22,14 @@
+ enum ane_fw_irq_role {
+ 	ANE_FW_IRQ_UNKNOWN,
+ 	ANE_FW_IRQ_CHANNELS,
++};
++
++/* Geometry selects an admitted TEXT pin, never a digest supplied by DT. */
++struct ane_fw_preload_build {
++	const char *name;
++	u64 dva[2];
++	u64 size[2];
++	const u8 *text_pin;
+ };
+ 
+ /* Later firmware generations must never enter the H14 staging path. */
+@@ -99,24 +107,66 @@
+ 	u16 dart_revision;
+ 	u8 dapf_count;
+ 	const u8 *text_pin;
+-};
+-
+-/* Pure range check: the boot loader supplies the physical addresses. */
++	/* When present, the table replaces the single-layout admission above. */
++	const struct ane_fw_preload_build *preload_builds;
++	u8 preload_build_count;
++};
++
++/* Pure bounded geometry check; reservations are validated separately. */
++static inline bool
++ane_fw_preload_layout_match(const u64 want_dva[2], const u64 want_size[2],
++			    const u64 phys[2], const u64 size[2], const u64 dva[2])
++{
++	u64 physical_end[2], device_end[2];
++	unsigned int i;
++
++	for (i = 0; i < 2; i++) {
++		if (!phys[i] || !dva[i] || !size[i] ||
++		    !IS_ALIGNED(phys[i], SZ_16K) || !IS_ALIGNED(dva[i], SZ_16K) ||
++		    !IS_ALIGNED(size[i], SZ_16K) ||
++		    size[i] != want_size[i] || dva[i] != want_dva[i] ||
++		    check_add_overflow(phys[i], size[i], &physical_end[i]) ||
++		    check_add_overflow(dva[i], size[i], &device_end[i]))
++			return false;
++	}
++	return (physical_end[0] <= phys[1] || physical_end[1] <= phys[0]) &&
++	       (device_end[0] <= dva[1] || device_end[1] <= dva[0]);
++}
++
++static inline const struct ane_fw_preload_build *
++ane_fw_preload_build(const struct ane_fw_platform *soc, const u64 phys[2],
++		     const u64 size[2], const u64 dva[2])
++{
++	unsigned int i;
++
++	for (i = 0; i < soc->preload_build_count; i++)
++		if (ane_fw_preload_layout_match(soc->preload_builds[i].dva,
++						soc->preload_builds[i].size, phys, size, dva))
++			return &soc->preload_builds[i];
++	return NULL;
++}
++
+ static inline bool
+ ane_fw_preload_ranges_valid(const struct ane_fw_platform *soc, const u64 phys[2],
+ 			    const u64 size[2], const u64 dva[2])
+ {
+-	u64 end[2];
+-	unsigned int i;
+-
+-	for (i = 0; i < 2; i++) {
+-		if (!phys[i] || !IS_ALIGNED(phys[i], SZ_16K) ||
+-		    size[i] != soc->preload_size[i] ||
+-		    dva[i] != soc->preload_dva[i] ||
+-		    check_add_overflow(phys[i], size[i], &end[i]))
+-			return false;
+-	}
+-	return end[0] <= phys[1] || end[1] <= phys[0];
++	if (soc->preload_build_count)
++		return ane_fw_preload_build(soc, phys, size, dva) != NULL;
++	return ane_fw_preload_layout_match(soc->preload_dva, soc->preload_size, phys, size, dva);
++}
++
++/* NULL means no recognized bounded image may be read or acquired. */
++static inline const u8 *
++ane_fw_preload_text_pin(const struct ane_fw_platform *soc, const u64 phys[2],
++			const u64 size[2], const u64 dva[2])
++{
++	const struct ane_fw_preload_build *build;
++
++	if (!soc->preload_build_count)
++		return ane_fw_preload_layout_match(soc->preload_dva, soc->preload_size,
++						   phys, size, dva) ? soc->text_pin : NULL;
++	build = ane_fw_preload_build(soc, phys, size, dva);
++	return build ? build->text_pin : NULL;
+ }
+ 
+ /*
+diff --git a/drivers/accel/ane/ane_fw_platform.c b/drivers/accel/ane/ane_fw_platform.c
+--- a/drivers/accel/ane/ane_fw_platform.c
++++ b/drivers/accel/ane/ane_fw_platform.c
+@@ -47,6 +47,30 @@
+ 	0xa9, 0x26, 0x8c, 0x5b, 0xfd, 0x94, 0xba, 0xa9,
+ 	0x9d, 0x8d, 0xd5, 0x9c, 0xbe, 0xc9, 0x99, 0xe2,
+ 	0xd1, 0xa2, 0x20, 0xd0, 0xee, 0x43, 0x8b, 0x8f,
++};
++
++/* Upstream #1746: measured iBoot preload on J714s, not a retained IM4P. */
++static const u8 ane_t6050_text_pin_27_3[] = {
++	0x11, 0x55, 0x75, 0x86, 0x4d, 0x4c, 0x8d, 0x02,
++	0xd4, 0x8d, 0x83, 0x07, 0x71, 0x70, 0xe7, 0xe1,
++	0x60, 0x79, 0xaa, 0xf7, 0x0d, 0xad, 0xd6, 0x08,
++	0xc7, 0x19, 0x10, 0xac, 0x66, 0xdc, 0x60, 0x66,
++};
++
++/* Both splits end at 0x1000036c000; the heap tail and IPC DVAs stay put. */
++static const struct ane_fw_preload_build ane_t6050_builds[] = {
++	{
++		.name = "27.0",
++		.dva = { 0x10000000000, 0x100000c0000 },
++		.size = { 0xc0000, 0x2ac000 },
++		.text_pin = ane_t6050_text_pin_27_0,
++	},
++	{
++		.name = "27.3-26C5035r",
++		.dva = { 0x10000000000, 0x100000ec000 },
++		.size = { 0xec000, 0x280000 },
++		.text_pin = ane_t6050_text_pin_27_3,
++	},
+ };
+ 
+ const struct ane_fw_platform ane_h16_platform = {
+@@ -175,6 +199,8 @@
+ 	.dart_revision = 0x204,
+ 	.dapf_count = 5,
+ 	.text_pin = ane_t6050_text_pin_27_0,
++	.preload_builds = ane_t6050_builds,
++	.preload_build_count = ARRAY_SIZE(ane_t6050_builds),
+ };
+ 
+ /*
+diff --git a/drivers/accel/ane/ane_fw_cold.h b/drivers/accel/ane/ane_fw_cold.h
+--- a/drivers/accel/ane/ane_fw_cold.h
++++ b/drivers/accel/ane/ane_fw_cold.h
+@@ -126,10 +126,15 @@
+ static inline int ane_fw_heap_tail(const u64 dva[2], const u64 size[2], u64 limit,
+ 				   u64 *tail, u64 *tail_size)
+ {
+-	u64 start = dva[1] + size[1], end = dva[0] + ANE_FW_SPAN;
++	u64 text_end, start, end;
+ 
+-	if (dva[1] < dva[0] + size[0] || start < dva[1] || start > end ||
+-	    !IS_ALIGNED(start, SZ_16K) || !IS_ALIGNED(end, SZ_16K) || end > limit)
++	if (!size[0] || !size[1] || !IS_ALIGNED(dva[0], SZ_16K) ||
++	    !IS_ALIGNED(dva[1], SZ_16K) || !IS_ALIGNED(size[0], SZ_16K) ||
++	    !IS_ALIGNED(size[1], SZ_16K) ||
++	    check_add_overflow(dva[0], size[0], &text_end) ||
++	    check_add_overflow(dva[1], size[1], &start) ||
++	    check_add_overflow(dva[0], ANE_FW_SPAN, &end) ||
++	    dva[1] < text_end || start > end || end > limit)
+ 		return -ERANGE;
+ 	*tail = start;
+ 	*tail_size = end - start;
+@@ -153,6 +158,8 @@
+ 	bool regions_ok;
+ 	u64 phys[2], size[2], dva[2];
+ 	bool text_ok;
++	const struct ane_fw_preload_build *build;
++	u8 text_digest[32];
+ 	const struct ane_fw_cold_state *pmgr;
+ 	bool crash_kernel;
+ };
+diff --git a/drivers/accel/ane/ane_fw_cold.c b/drivers/accel/ane/ane_fw_cold.c
+--- a/drivers/accel/ane/ane_fw_cold.c
++++ b/drivers/accel/ane/ane_fw_cold.c
+@@ -74,6 +74,8 @@
+ 	struct ane_fw_surface preload[2], heap_tail;
+ 	u64 preload_phys[2];
+ 	u8 data_digest[SHA256_DIGEST_SIZE];
++	/* The layout-selected pin is retained for all later copies/restarts. */
++	const u8 *text_pin;
+ 	/* Powered down for system sleep; a (cold or warm) boot is due. */
+ 	bool slept;
+ 	/*
+@@ -129,6 +131,11 @@
+ /* The H17 platform device, bound by ane_fw_staged_bind(). */
+ static struct device *ane_fw_bound_dev;
+ 
++/* A first live-pin observation must not accidentally become an engine boot. */
++static bool ane_fw_observe_only;
++module_param_named(ane_observe_only, ane_fw_observe_only, bool, 0400);
++MODULE_PARM_DESC(ane_observe_only, "Hash recognized loader TEXT and refuse acquisition (read-only boot option)");
++
+ /* The bring-up holds ANE_SYS itself now: drop the bind's hand-off reference. */
+ static void ane_fw_bind_release(struct ane_fw_backend *b)
+ {
+@@ -685,7 +692,7 @@
+  */
+ static int ane_fw_rvbar_ready(struct ane_fw_backend *b)
+ {
+-	u64 text = b->soc->preload_dva[0];
++	u64 text = b->preload[0].dva;
+ 	u64 rvbar = ane_rd64(b, b->engine + 0x1050000);
+ 
+ 	switch (ane_fw_rvbar_check(rvbar, text)) {
+@@ -719,7 +726,7 @@
+ 	memunmap(source);
+ 	dma_wmb();
+ 	sha256(s->cpu, s->size, digest);
+-	return memcmp(digest, i ? b->data_digest : b->soc->text_pin, sizeof(digest)) ?
++	return memcmp(digest, i ? b->data_digest : b->text_pin, sizeof(digest)) ?
+ 	       -EKEYREJECTED : 0;
+ }
+ 
+@@ -1532,11 +1539,14 @@
+ 				   bool *have_data_pin)
+ {
+ 	struct device_node *np = b->pdev->dev.of_node;
++	const u8 *pin;
+ 	unsigned int i;
+ 	int ret;
+ 
+ 	if (!of_property_read_bool(np, "apple,firmware-preloaded") ||
+ 	    of_property_count_u32_elems(np, "memory-region") != 2 ||
++	    of_property_count_strings(np, "memory-region-names") != 2 ||
++	    of_property_count_u64_elems(np, "apple,firmware-iovas") != 2 ||
+ 	    of_property_read_u64_array(np, "apple,firmware-iovas", dva, 2))
+ 		return -ENODATA;
+ 	*have_data_pin = !of_property_read_u8_array(np, "apple,preload-data-sha256",
+@@ -1552,7 +1562,9 @@
+ 		if (ret)
+ 			return ret;
+ 	}
+-	if (!ane_fw_preload_ranges_valid(b->soc, physical, size, dva))
++	pin = ane_fw_preload_text_pin(b->soc, physical, size, dva);
++	/* Metadata cannot switch the build admitted before any power access. */
++	if (!pin || pin != b->text_pin)
+ 		return -EINVAL;
+ 	return 0;
+ }
+@@ -1591,7 +1603,7 @@
+ 		sha256_init(&hash);
+ 		sha256_update(&hash, snapshots[i].cpu, size[i]);
+ 		sha256_final(&hash, digest);
+-		if (memcmp(digest, i ? data_pin : b->soc->text_pin, sizeof(digest)))
++		if (memcmp(digest, i ? data_pin : b->text_pin, sizeof(digest)))
+ 			return -EKEYREJECTED;
+ 	}
+ 	/* Preserve every personalized DATA byte, including the iBoot TLV table. */
+@@ -1670,7 +1682,8 @@
+ 			      IOMMU_READ | IOMMU_WRITE, &b->pool);
+ 	if (ret)
+ 		return ret;
+-	ret = ane_fw_alloc_at(b, ANE_FW_IPC_DVA, SZ_64K,
++	/* Map the page-aligned capacity, not an invented firmware request. */
++	ret = ane_fw_alloc_at(b, ANE_FW_IPC_DVA, ANE_FW_HEAP_DVA - ANE_FW_IPC_DVA,
+ 			      IOMMU_READ | IOMMU_WRITE, &b->ipc);
+ 	if (ret)
+ 		return ret;
+@@ -1691,7 +1704,8 @@
+ {
+ 	void __iomem *scratch = b->engine + b->soc->scratch;
+ 	u8 *init = b->pool.cpu + 0x180;
+-	u64 table;
++	struct ane_fw_surface ipc = b->ipc;
++	u64 table, ipc_bytes;
+ 	unsigned int i;
+ 	int ret;
+ 
+@@ -1707,15 +1721,19 @@
+ 	if (ret)
+ 		return ret;
+ 	dev_dbg(&b->pdev->dev, "ANE boot: READY\n");
+-	if (ane_rd32(b, scratch) != 8 || ane_rd32(b, scratch + 4) != 0xc440 ||
++	/* scratch1 is the unsigned request minus one; widen before adding. */
++	ipc_bytes = (u64)ane_rd32(b, scratch + 4) + 1;
++	if (ane_rd32(b, scratch) != ANE_FW_CHANNELS ||
++	    ipc_bytes < ANE_FW_TABLE_SIZE || ipc_bytes > b->ipc.size ||
+ 	    ane_rd32(b, scratch + 12) != 0xf00000 || ane_rd32(b, scratch + 16))
+ 		return -EPROTO;
++	dev_info(&b->pdev->dev, "H17 ANE: READY; IPC %#llx bytes requested\n", ipc_bytes);
+ 	put_unaligned_le64(b->ipc.dva, init + 8);
+ 	put_unaligned_le64(ANE_FW_SPAN, init + 0x10);
+ 	put_unaligned_le64(0xfc80000, init + 0x18);
+ 	put_unaligned_le64(b->heap.dva, init + 0x20);
+ 	put_unaligned_le64(b->heap.size, init + 0x28);
+-	put_unaligned_le64(0xc441, init + 0x50);
++	put_unaligned_le64(ipc_bytes, init + 0x50);
+ 	put_unaligned_le64(b->pool.dva, init + 0x58);
+ 	put_unaligned_le64(b->pool.size, init + 0x60);
+ 	put_unaligned_le32(64, init + 0x68);
+@@ -1730,8 +1748,10 @@
+ 	table = (u64)ane_rd32(b, scratch + 4) << 32 | ane_rd32(b, scratch);
+ 	if (table != b->ipc.dva)
+ 		return -EPROTO;
++	/* Every descriptor, ring and immutable-table read stays inside the request. */
++	ipc.size = ipc_bytes;
+ 	ret = ane_fw_transport_init(&b->transport, b->soc, &ane_fw_ops, b,
+-				    b->ipc, b->pool, 0x4000, table, ANE_FW_TABLE_SIZE);
++				    ipc, b->pool, 0x4000, table, ANE_FW_TABLE_SIZE);
+ 	if (ret)
+ 		return ret;
+ 	ret = ane_fw_transport_arm(&b->transport);
+@@ -2125,14 +2145,18 @@
+ 	struct device_node *np = pdev->dev.of_node;
+ 	struct device_node *chosen __free(device_node) = of_find_node_by_path("/chosen");
+ 	struct ane_fw_handoff h = {};
+-	u8 digest[SHA256_DIGEST_SIZE] = {};
+-	bool layout_ok, text_measured = false;
++	const u8 *pin = NULL;
++	bool text_measured = false;
++	u32 ane_type;
+ 	unsigned int i;
+ 
+ 	if (chosen)
+ 		of_property_read_string(chosen, "apple,ane-cold-boot", &h.marker);
+-	h.preloaded = of_property_read_bool(np, "apple,firmware-preloaded");
++	h.preloaded = of_property_read_bool(np, "apple,firmware-preloaded") &&
++		      !of_property_read_u32(np, "apple,ane-type", &ane_type) &&
++		      ane_type == soc->ane_type;
+ 	h.regions_ok = of_property_count_u32_elems(np, "memory-region") == 2 &&
++		       of_property_count_strings(np, "memory-region-names") == 2 &&
+ 		       of_property_count_u64_elems(np, "apple,firmware-iovas") == 2 &&
+ 		       !of_property_read_u64_array(np, "apple,firmware-iovas", h.dva, 2);
+ 	for (i = 0; h.regions_ok && i < 2; i++) {
+@@ -2143,38 +2167,40 @@
+ 			       !strcmp(name, i ? "firmware-data" : "firmware-text") &&
+ 			       !ane_fw_preload_range(np, i, &h.phys[i], &h.size[i]);
+ 	}
+-	layout_ok = h.regions_ok && ane_fw_preload_ranges_valid(soc, h.phys, h.size, h.dva);
+-	/*
+-	 * Observation only: preload_range() already proved a no-map reservation
+-	 * outside System RAM. Hash its TEXT without granting DMA or engine access.
+-	 * Keep layout and pin checks together for acquisition, as before.
++	if (h.preloaded && h.regions_ok) {
++		pin = ane_fw_preload_text_pin(soc, h.phys, h.size, h.dva);
++		h.build = ane_fw_preload_build(soc, h.phys, h.size, h.dva);
++	}
++	/* Only a recognized, bounded no-map reservation outside RAM is read.
++	 * A mismatch is logged for refusal diagnosis, never added as a new pin.
+ 	 */
+-	if (h.regions_ok) {
++	if (pin) {
+ 		void *text = memremap(h.phys[0], h.size[0], MEMREMAP_WB);
+ 
+ 		if (text) {
+-			sha256(text, h.size[0], digest);
++			sha256(text, h.size[0], h.text_digest);
+ 			memunmap(text);
+ 			text_measured = true;
+-			h.text_ok = layout_ok && !memcmp(digest, soc->text_pin, sizeof(digest));
++			h.text_ok = !memcmp(h.text_digest, pin, sizeof(h.text_digest));
+ 		}
+ 	}
+ 	*hp = h;
+-	if (ane_fw_cold_handoff_loader_ok(&h, soc))
++	if (ane_fw_cold_handoff_loader_ok(&h, soc) && !ane_fw_observe_only)
+ 		return true;
+ 	dev_info(&pdev->dev, "H17 ANE: no loader hand-off (%s); leaving the engine alone\n",
+ 		 !h.marker || strcmp(h.marker, ANE_FW_COLD_BOOT_EVIDENCE) ? "raw-boot marker" :
+ 		 !h.preloaded || !h.regions_ok ? "preload reservations" :
+-		 !layout_ok ? "preload layout" :
+-		 !text_measured ? "firmware TEXT not mapped" : "firmware TEXT pin");
++		 !pin ? "preload layout" :
++		 !text_measured ? "firmware TEXT not mapped" :
++		 !h.text_ok ? "firmware TEXT pin" : "observation-only boot");
+ 	if (h.regions_ok) {
+ 		dev_info(&pdev->dev,
+ 			 "H17 ANE: preload TEXT size %#llx @%#llx, DATA size %#llx @%#llx (%s)\n",
+ 			 h.size[0], h.dva[0], h.size[1], h.dva[1],
+-			 layout_ok ? "layout as expected" : "layout differs");
++			 pin ? "recognized layout" : "unrecognized layout; TEXT not read");
+ 		if (text_measured)
+ 			dev_info(&pdev->dev, "H17 ANE: preloaded TEXT sha256 %*phN\n",
+-				 (int)sizeof(digest), digest);
++				 (int)sizeof(h.text_digest), h.text_digest);
+ 		else
+ 			dev_info(&pdev->dev, "H17 ANE: preloaded TEXT sha256 not measured\n");
+ 	}
+@@ -2287,6 +2313,7 @@
+ 	b->pdev = pdev;
+ 	get_device(&pdev->dev);
+ 	b->soc = soc;
++	b->text_pin = ane_fw_preload_text_pin(soc, handoff.phys, handoff.size, handoff.dva);
+ 	b->next_dva = ANE_FW_ALLOC_DVA;
+ 	mutex_init(&b->lock);
+ 	INIT_LIST_HEAD(&b->mappings);
+@@ -2371,7 +2398,10 @@
+ 		ane_backend = NULL;
+ 		goto fail;
+ 	}
+-	dev_info(&pdev->dev, "H17 ANE: loader hand-off verified; starting the engine\n");
++	dev_info(&pdev->dev,
++		 "H17 ANE: loader hand-off verified (%s build, TEXT sha256 %*phN); starting the engine\n",
++		 handoff.build ? handoff.build->name : "pinned",
++		 (int)sizeof(handoff.text_digest), handoff.text_digest);
+ 	INIT_WORK(&b->start, ane_fw_start_work);
+ 	return 0;
+ fail:
+diff --git a/drivers/accel/ane/ane_fw_protocol.h b/drivers/accel/ane/ane_fw_protocol.h
+--- a/drivers/accel/ane/ane_fw_protocol.h
++++ b/drivers/accel/ane/ane_fw_protocol.h
+@@ -54,7 +54,8 @@
+ 	u32 seen = 0;
+ 	unsigned int i, j;
+ 
+-	if (!table || !channels ||
++	if (!table || !channels || (ipc_dva & (ANE_FW_SLOT_SIZE - 1)) ||
++	    (table_dva & (ANE_FW_SLOT_SIZE - 1)) ||
+ 	    !ane_fw_contains(ipc_dva, ipc_size, table_dva, ANE_FW_TABLE_SIZE))
+ 		return -EPROTO;
+ 	table_off = table_dva - ipc_dva;
+diff --git a/drivers/accel/ane/ane_fw_platform_test.c b/drivers/accel/ane/ane_fw_platform_test.c
+--- a/drivers/accel/ane/ane_fw_platform_test.c
++++ b/drivers/accel/ane/ane_fw_platform_test.c
+@@ -37,6 +37,41 @@
+ 	KUNIT_EXPECT_FALSE(test, ane_fw_preload_ranges_valid(&soc, phys, size, dva));
+ }
+ 
++static void ane_preload_builds_test(struct kunit *test)
++{
++	static const u8 pin_a[32] = { 0xa }, pin_b[32] = { 0xb };
++	static const struct ane_fw_preload_build builds[] = {
++		{ "a", { 0x10000000000, 0x100000c0000 }, { 0xc0000, 0x2ac000 }, pin_a },
++		{ "b", { 0x10000000000, 0x100000ec000 }, { 0xec000, 0x280000 }, pin_b },
++	};
++	const struct ane_fw_platform soc = {
++		.preload_builds = builds,
++		.preload_build_count = ARRAY_SIZE(builds),
++	};
++	u64 phys[] = { 0x100000000, 0x200000000 };
++	u64 size[] = { 0xec000, 0x280000 };
++	u64 dva[] = { 0x10000000000, 0x100000ec000 };
++	const u8 *pin;
++
++	KUNIT_EXPECT_TRUE(test, ane_fw_preload_ranges_valid(&soc, phys, size, dva));
++	KUNIT_EXPECT_PTR_EQ(test, ane_fw_preload_build(&soc, phys, size, dva), &builds[1]);
++	pin = ane_fw_preload_text_pin(&soc, phys, size, dva);
++	KUNIT_EXPECT_PTR_EQ(test, pin, &pin_b[0]);
++	size[0] = 0xc0000;
++	size[1] = 0x2ac000;
++	dva[1] = 0x100000c0000;
++	KUNIT_EXPECT_PTR_EQ(test, ane_fw_preload_text_pin(&soc, phys, size, dva), &pin_a[0]);
++	size[0] = 0xec000;
++	KUNIT_EXPECT_FALSE(test, ane_fw_preload_ranges_valid(&soc, phys, size, dva));
++	KUNIT_EXPECT_NULL(test, ane_fw_preload_text_pin(&soc, phys, size, dva));
++	size[1] = 0x280000;
++	dva[1] = 0x100000ec000;
++	phys[0]++;
++	KUNIT_EXPECT_FALSE(test, ane_fw_preload_ranges_valid(&soc, phys, size, dva));
++	phys[0] = U64_MAX - SZ_16K + 1;
++	KUNIT_EXPECT_FALSE(test, ane_fw_preload_ranges_valid(&soc, phys, size, dva));
++}
++
+ /*
+  * H16 and H17 devices (any firmware platform) take the backend's sleep path,
+  * never the rtclient one; only the H13/H14 rtclient (no platform) does.
+@@ -70,6 +105,7 @@
+ 	KUNIT_CASE(ane_platform_staged_bind_test),
+ 	KUNIT_CASE(ane_platform_sleep_path_test),
+ 	KUNIT_CASE(ane_preload_ranges_test),
++	KUNIT_CASE(ane_preload_builds_test),
+ 	{}
+ };
+ 

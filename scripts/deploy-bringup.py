@@ -38,9 +38,10 @@ DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE),
               "touchid-sco": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE),
               "touchid-sco-spk": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE,
                                   candidate.VARIANTS["touchid-sco"]["release"]),
-              "touchid-sco-spk-hfp": (candidate.VARIANTS["touchid-sco-spk"]["release"],)}
+              "touchid-sco-spk-hfp": (candidate.VARIANTS["touchid-sco-spk"]["release"],),
+              "bringup-full": (candidate.VARIANTS["touchid-sco-spk-hfp"]["release"],)}
 # Defaults a rollback may restore besides the baseline payload.
-PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco", "touchid-sco-spk")
+PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco", "touchid-sco-spk", "touchid-sco-spk-hfp")
 
 
 def select(variant):

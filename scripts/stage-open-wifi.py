@@ -216,6 +216,8 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
                 existing = {token.partition("=")[0] for token in line.split("=", 1)[1].split()}
                 require(not existing.intersection(candidate_boot.ONE_SHOT_PARAMETERS[variant]), "baseline already supplies SEP parameters")
         extra += " " + " ".join(key + "=" + value for key, value in candidate_boot.ONE_SHOT_PARAMETERS[variant].items())
+    if variant == "bringup-full":
+        extra += " " + " ".join(key + "=" + value for key, value in candidate_boot.FULL_PARAMETERS.items())
     lines = [line + extra if line.startswith("chosen.bootargs=") else line for line in lines]
     encoded = ("\n".join(lines) + "\n").encode("ascii")
     spec = importlib.util.spec_from_file_location("trial_payload", PROJECT / "work/aura-audit/compose-linux-rescue.py")

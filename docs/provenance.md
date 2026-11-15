@@ -155,6 +155,12 @@ The patch targets the selected T6050 driver; standard native rings/framing are
 implemented, private HDR negotiation is not. Native reverse engineering does
 not qualify headset voice hardware.
 
+Native acquisition now requires the independently retained Linux unit hash;
+retained-volume mode also requires externally anchored platform evidence.
+`inspect-capture-native.py` binds exact ARM64e dispatch and camera registry
+observations without awarding hardware admission. Use matching private-owner
+input/output directories; do not weaken single-link or ownership gates.
+
 The ProRes ownership patch is informed by
 [`PR925`](https://github.com/aurora-silicon/linux/pull/925#issuecomment-6724518116),
 whose parked depth-one experiment reports invalid DART translations. This
@@ -210,6 +216,24 @@ T6050 Centauri controller probe sets the quirk; other Bluetooth drivers and
 global HCI behavior are unchanged. Actual same-unit controller replies rejected
 enhanced setup with status 0x11. That is evidence for trying the existing legacy
 path, not proof that the controller implements it or that microphone audio works.
+
+### Broad bringup ports
+
+The full candidate ports [AVE #1747](https://github.com/aurora-silicon/linux/pull/1747),
+[ANE #1746](https://github.com/aurora-silicon/linux/pull/1746) with firmware-requested
+IPC bounds, [PHY #1745](https://github.com/aurora-silicon/linux/pull/1745),
+[DP tunnel #1930](https://github.com/aurora-silicon/linux/pull/1930) and
+[kept pools #1946](https://github.com/aurora-silicon/linux/pull/1946), with explicit
+M5 identity-pin retention. The source/patch ledger and actual production-body
+checks bind each adaptation. The J714s reports are source justification, not
+local runtime qualification. AVE deliberately uses the tested compatibility
+writer, not a guessed native-length extension. ANE's known upstream live pin
+is unchanged; initial J716s acquisition is observation-only.
+
+Thermal lane evidence derives from this unit's actual ADT. The preparatory
+effort patch is not selected while PMP/report startup is unresolved, and fan
+manual mode is not inferred from writable targets on another board. No private
+wake stack, J714s routing table or best-effort camera privacy policy is imported.
 
 ## Licensing and attribution
 

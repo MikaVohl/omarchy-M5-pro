@@ -45,6 +45,15 @@ SPANS = (
     ("ane", "InitFirmwareConfiguration", 0x2305824, 0x15b4),
     ("ane", "LoadFirmware_gated", 0x2310e90, 0x83c),
     ("ane", "waitForFirmwareToQuiesce", 0x230cc04, 0x284),
+    ("camera", "ISP_InitializeExclave", 0x23ee540, 0x15ec),
+    ("camera", "ISP_InitialSensorDetection", 0x2424fcc, 0x2e34),
+    ("camera", "ISP_PowerOnExclaveCore_gated", 0x242c878, 0x3ac),
+    ("camera", "ISP_PowerOffExclaveCore_gated", 0x242c384, 0x408),
+    ("camera", "ECDirtyShutdown", 0x23cf320, 0x350),
+    ("camera", "ECSendCommandOff", 0x23cf6b0, 0x350),
+    ("camera", "ECForceCleanup", 0x23cfdd0, 0x240),
+    ("camera", "ECForceReset", 0x23d0050, 0x240),
+    ("camera", "ECNotifyFirmwareTearDown", 0x23d02d0, 0x2d4),
 )
 AVE_LENGTHS_OFFSET = 0x2b682c
 AVE_LENGTHS = (0x3b40, 0x13ee0, 0x3920, 0x6e08, 0x78c8, 0x6090)
@@ -106,7 +115,18 @@ def source_facts(decoded):
                   prores.native_rows(decoded, 0x12068b0, 80) if off in (0x394, 0x714)]
     if capacities != [(0x394, 0xffffffc0, 0x200000), (0x714, 0xffffffc0, 0x200000)]:
         raise prores.Refused("native ProRes statistics rows differ")
+    camera_records = [bytes(prores.span(decoded, offset, 64)) for offset in (0x10df770, 0x10eaaf8)]
+    if (camera_records[0] != camera_records[1] or
+            prores.sha(camera_records[0]) != "d49e43638b2c119008c51b7afed1ce915e426ff1a569ac76f020033b8f187e45"):
+        raise prores.Refused("native camera platform-118 records differ")
     return {
+        "camera": {"native_platform_id": struct.unpack_from("<I", camera_records[0])[0],
+                   "platform_record_file_offsets": [0x10df770, 0x10eaaf8],
+                   "platform_record_bytes": 64, "platform_record_sha256": prores.sha(camera_records[0]),
+                   "native_driver": "com.apple.driver.AppleH16CameraInterface; AppleExclaveCameraProxy",
+                   "sensor_identity_proven": False, "coprocessor_quiescence_verified": False,
+                   "firmware_abi_qualified": False, "privacy_indicator_qualified": False,
+                   "remaining_contract": "CH_INFO_GET sensor version; AP/exclave ownership release; current-boot no-map reservations and quiescent handoff; visible privacy/watchdog interlock"},
         "ave": {"native_command_size_table_file_offset": AVE_LENGTHS_OFFSET,
                 "native_start_bytes": {"avc": lengths[0], "hevc": lengths[1], "av1": lengths[2]},
                 "native_process_bytes": {"avc": lengths[3], "hevc": lengths[4], "av1": lengths[5]},

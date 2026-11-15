@@ -1,0 +1,157 @@
+From: Omarchy J716s bringup
+Subject: [PATCH] media: apple: ave: admit pinned 26C5035r compatibility ABI
+
+Base: 8ab10100a4c1c944797e3fc8345589aff57777df, after
+kernel-j716s-media-handoff-diagnostics.patch.
+Port of merged aurora-silicon/linux#1747, reviewed at
+680a12f9358fdcf76a0b0a36e5975dfa3ae9322f:
+https://github.com/aurora-silicon/linux/pull/1747
+
+Bind T6050 geometry to image TEXT CRC, retaining reservation, DART ownership,
+loader TEXT CRC and pristine DATA checks before acquisition. Do not substitute
+a retained DATA CRC for the loader's checksum: DATA contains loader state.
+
+The native 26C5035r command lengths are genuinely 0x6e08/0x78c8. Native AVC
+copies PICMGMT 0x6048 at +0xdc0; HEVC copies it at +0x1568, then copies codec
+state at +0x75b0 and +0x771c. Thus the extra 16 bytes are NOT simply a command
+tail for HEVC. This port deliberately selects the older compatibility ABI,
+not native commands with guessed extension fields. Upstream #1747 exercised
+that exact 26A428 command layout with H.264 and HEVC encode+decode on J714s
+using this TEXT build. Preserve old lengths, field offsets, reply parsing,
+30 fps/B-frame constraints, slot-buffer HEVC headers (#1638), and quarantine.
+No native-size padding, format expansion, fallback or physical-pass claim.
+
+---
+diff --git a/drivers/media/platform/apple/ave/ave.h b/drivers/media/platform/apple/ave/ave.h
+--- a/drivers/media/platform/apple/ave/ave.h
++++ b/drivers/media/platform/apple/ave/ave.h
+@@ -170,3 +170,5 @@
+ #define AVE_FW_TEXT_CRC_T6050_26A428 0x87279429
++/* macOS 27.3 beta 1 (26C5035r), exact T6050 TEXT image. */
++#define AVE_FW_TEXT_CRC_T6050_26C5035 0xc25b4ddb
+ 
+ struct ave_ctx;
+@@ -185,6 +187,17 @@
++/* Segment geometry and TEXT identity are one indivisible build contract. */
++struct ave_fw_build {
++	const char *name;
++	u32 text_size;
++	u32 data_size;
++	u32 text_crc;
++};
++
+ struct ave_variant {
+ 	const struct ave_coproc_regs *regs;
+ 	u32 fw_text_size;
+ 	u32 fw_data_size;
++	/* If present, replace the fixed geometry/TEXT CRC with this build table. */
++	const struct ave_fw_build *builds;
++	unsigned int build_count;
+ 	u32 boot_device_id;
+ 	u32 device_type;
+diff --git a/drivers/media/platform/apple/ave/ave-drv.c b/drivers/media/platform/apple/ave/ave-drv.c
+--- a/drivers/media/platform/apple/ave/ave-drv.c
++++ b/drivers/media/platform/apple/ave/ave-drv.c
+@@ -125,10 +125,18 @@
+  * A18 Pro, after clearing the SVE idle word at mailbox +0x118. Its boot configuration names
+  * device 28, and so does its handshake's device type.
+  */
++static const struct ave_fw_build ave_t6050_builds[] = {
++	{ "26A428", 0x154000, 0x134000, AVE_FW_TEXT_CRC_T6050_26A428 },
++	/* #1747 qualifies 26A428 compatibility commands, not the native extension. */
++	{ "26C5035r", 0x158000, 0x134000, AVE_FW_TEXT_CRC_T6050_26C5035 },
++};
++
+ static const struct ave_variant ave_t6050 = {
+ 	.regs = &ave_coproc_v40,
+ 	.fw_text_size = 0x154000,
+ 	.fw_data_size = 0x134000,
++	.builds = ave_t6050_builds,
++	.build_count = ARRAY_SIZE(ave_t6050_builds),
+ 	.boot_device_id = 28,
+ 	.boot_arg_value = AVE_COPROC_BOOT_ARG_VALUE,
+ 	.timebase_multiplier = 1,
+diff --git a/drivers/media/platform/apple/ave/ave-fw.c b/drivers/media/platform/apple/ave/ave-fw.c
+--- a/drivers/media/platform/apple/ave/ave-fw.c
++++ b/drivers/media/platform/apple/ave/ave-fw.c
+@@ -42,3 +42,4 @@
+ 	AVE_FW_TEXT_CRC_T6050_26A428, /* AppleAVE2FW, macOS 27.0 26A428 / T6050 */
++	AVE_FW_TEXT_CRC_T6050_26C5035, /* AppleAVE2FW, macOS 27.3 26C5035r / T6050 */
+ 	0x460c7a7c, /* AppleAVE2FW 6070.11.1 / T6000 */
+ 	0x25bfd039, /* AppleAVE2FW 6070.11.1 / T8112 */
+@@ -172,10 +173,20 @@
++static const struct ave_fw_build *ave_fw_find_build(const struct ave_variant *v,
++						    size_t text, size_t data)
++{
++	for (unsigned int i = 0; i < v->build_count; i++)
++		if (text == v->builds[i].text_size && data == v->builds[i].data_size)
++			return &v->builds[i];
++	return NULL;
++}
++
+ /*
+  * Find the firmware, check that it is a build we speak to and that DATA is
+  * still as the bootloader left it, and keep a copy of DATA for restarts.
+  */
+ int ave_fw_probe(struct ave_dev *ave)
+ {
+ 	struct device *dev = ave->dev;
+-	u32 text_crc, data_crc, want;
++	const struct ave_fw_build *build = NULL;
++	u32 text_crc, data_crc, want, want_crc = ave->variant->text_crc;
+ 	bool known = !ave->variant->boot_qualified;
+ 	int ret;
+@@ -193,10 +204,18 @@
+-	if (ave->text.size != ave->variant->fw_text_size ||
+-	    ave->data.size != ave->variant->fw_data_size)
++	if (ave->variant->build_count) {
++		build = ave_fw_find_build(ave->variant, ave->text.size, ave->data.size);
++		if (!build)
++			return dev_err_probe(dev, -EINVAL,
++					     "unexpected firmware segment sizes (TEXT %#zx DATA %#zx)\n",
++					     ave->text.size, ave->data.size);
++		want_crc = build->text_crc;
++	} else if (ave->text.size != ave->variant->fw_text_size ||
++		   ave->data.size != ave->variant->fw_data_size) {
+ 		return dev_err_probe(dev, -EINVAL,
+ 				     "unexpected firmware segment sizes: TEXT %#zx DATA %#zx, expected TEXT %#x DATA %#x\n",
+ 				     ave->text.size, ave->data.size,
+ 				     ave->variant->fw_text_size, ave->variant->fw_data_size);
++	}
+ 	if ((ave->text.phys < ave->data.phys + ave->data.size &&
+ 	     ave->data.phys < ave->text.phys + ave->text.size) ||
+ 	    (ave->text.iova < ave->data.iova + ave->data.size &&
+ 	     ave->data.iova < ave->text.iova + ave->text.size))
+@@ -237,10 +256,12 @@
+-	if (!known ||
+-	    (ave->variant->text_crc && text_crc != ave->variant->text_crc))
++	if (!known || (want_crc && text_crc != want_crc))
+ 		return dev_err_probe(dev, -ENODEV,
+ 				     "unsupported firmware (text CRC %08x)\n",
+ 				     text_crc);
+ 	ave->text_crc = text_crc;
+ 	ave->layout = ave_layout_for_crc(text_crc);
++	if (build)
++		dev_info(dev, "firmware build %s (TEXT %#zx CRC %08x, DATA %#zx)\n",
++			 build->name, ave->text.size, text_crc, ave->data.size);
+ 
+ 	ave->data_pristine = vmalloc(ave->data.size);
+ 	if (!ave->data_pristine)
+diff --git a/drivers/media/platform/apple/ave/ave-layout.c b/drivers/media/platform/apple/ave/ave-layout.c
+--- a/drivers/media/platform/apple/ave/ave-layout.c
++++ b/drivers/media/platform/apple/ave/ave-layout.c
+@@ -960,5 +960,14 @@
+ 	/* The macOS 27.0 build for the M5 Pro and Max. */
+ 	if (crc == AVE_FW_TEXT_CRC_T6050_26A428)
+ 		return &ave_layout_26a428;
++	/*
++	 * #1747 tested these older compatibility commands on 26C5035r: keep
++	 * Process 0x6df8/0x78b8 and all field/reply/slot ownership contracts.
++	 * Native Process 0x6e08/0x78c8 has a larger PICMGMT block followed by
++	 * shifted HEVC codec state, not just zero padding at command end.
++	 * Do not use those lengths without a separate native layout.
++	 */
++	if (crc == AVE_FW_TEXT_CRC_T6050_26C5035)
++		return &ave_layout_26a428;
+ 	return NULL;
+ }

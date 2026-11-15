@@ -1,0 +1,124 @@
+Subject: [PATCH] drm/asahi: g17: return released kept-graph backing without retiring identity
+
+Base: rolotrealanis98/linux 8ab10100a4c1c944797e3fc8345589aff57777df
+Upstream: https://github.com/aurora-silicon/linux/pull/1946
+Upstream-commit: 3ad9af366a7251892f3ad9ecca21b086de834ddf
+Upstream-merge: 2dbf9d53ae5f7dcd8067360988e5688272a01e60
+
+Port the kept-graph housekeeping pass from merged PR1946. Return only the
+USC backing to the existing preallocated deferred batch after observing the
+final free-list release; retain graph memory, scheduler/control objects and
+pool ownership until the firmware can no longer walk the graph. Destruction
+of backing mappings remains outside the device mutex. This hardening is not
+an explanation or a fix for the observed J716s scheduling-pause recovery.
+
+The pinned M5 implementation differs from the Neo test of PR1946: render
+IDs are rebindable, and merely retaining an Arc<RenderPool> does not pin the
+physical identity. Transfer the existing pair pin into RetiredBinding at
+both parking and owner replacement. This does not allocate, take another
+pin, or change a release cursor; the graph's original identity remains held
+for exactly the graph's retained lifetime, including the leak-on-no-room
+path. A same-context pool replacement also keeps the old identity until its
+existing final-release collector permits dropping the retired binding.
+
+Pools::released(id, control) ignores control and accepts missing/out-of-range
+leases in this base. Do not use it as a backing-release proof on M5. Match
+all fields of the current Owner (pool serial, backing epoch, slot, control,
+run-list and cookie) and require a consumed final release with no inherited
+release witness. A missing lease is not a validated release. The pool pin
+prevents identity/storage reassignment while kept graphs are scanned; vacate
+changes only backing residency, never the retained identity or graph.
+
+Keep existing off-lock preparation, logical-owner, runtime-epoch, recovery,
+DMA retirement and deferred-capacity gates unchanged. PR1948 explicitly
+excludes M5 and is not part of this port; PR1925 logging is not a dependency.
+
+--- a/drivers/gpu/drm/asahi/g17/queue/render.rs
++++ b/drivers/gpu/drm/asahi/g17/queue/render.rs
+@@ -2762,2 +2762,5 @@
+ pub(crate) struct RetiredBinding {
++    /// M5 identities are rebindable: retain the original pin while firmware
++    /// may still walk this graph, not just an Arc to its logical pool.
++    _pool_pin: Option<crate::g17::freelist::PoolPin>,
+     memory: Option<KBox<memory::Memory>>,
+@@ -3088,1 +3091,1 @@
+-        self.pool_pin = binding.pool_pin.take();
++        let old_pool_pin = core::mem::replace(&mut self.pool_pin, binding.pool_pin.take());
+@@ -3094,2 +3097,3 @@
+         let retired = RetiredBinding {
++            _pool_pin: old_pool_pin,
+             memory: old_memory,
+--- a/drivers/gpu/drm/asahi/g17/queue/render/parked.rs
++++ b/drivers/gpu/drm/asahi/g17/queue/render/parked.rs
+@@ -111,2 +111,3 @@
+         let retired = RetiredBinding {
++            _pool_pin: self.pool_pin,
+             memory: Some(self.memory),
+--- a/drivers/gpu/drm/asahi/g17/runtime/render/pools.rs
++++ b/drivers/gpu/drm/asahi/g17/runtime/render/pools.rs
+@@ -77,0 +78,12 @@
++    /// Proof for returning a retained graph's backing, not just an idle slot.
++    /// M5 identities can be rebound: only this exact backing's owner and its
++    /// consumed final release permit unmapping. Missing leases prove nothing.
++    pub(super) fn backing_released(&self, pool: &RenderPool) -> bool {
++        Self::slot(pool.id())
++            .ok()
++            .and_then(|slot| self.leases[slot])
++            .is_some_and(|lease| {
++                lease.owner() == Self::owner(pool) && lease.released()
++            })
++    }
++
+--- a/drivers/gpu/drm/asahi/g17/runtime/render.rs
++++ b/drivers/gpu/drm/asahi/g17/runtime/render.rs
+@@ -1125,9 +1125,9 @@
+ 
+     /// Gives back the USC backing of render pools whose client VM pressure
+     /// reclaim evicted (an idle VM) and whose final free-list release was
+-    /// consumed. The vacated backings go to the worker's deferred batch, which
+-    /// frees them after the device mutex; a later job of that client re-arms
+-    /// the pool first.
++    /// consumed, and of the pools that kept graphs still hold. The vacated
++    /// backings go to the worker's deferred batch, which frees them after the
++    /// device mutex; a later job of an evicted client re-arms its pool first.
+     pub(in crate::g17) fn vacate_evicted_render_pools(
+         &mut self,
+         init: &crate::g17::initdata::InitData,
+@@ -1154,2 +1154,16 @@
+         }
++        // A kept graph is never staged again. Keep its graph and identity pin;
++        // only its exact backing's consumed final release permits unmapping.
++        for graph in render.kept_graphs.iter() {
++            if !deferred.render_backing_room() {
++                break;
++            }
++            let pool = graph.pool();
++            if pool.vacant() || !render.pools.backing_released(pool) {
++                continue;
++            }
++            if let Some(backing) = pool.vacate() {
++                deferred.defer_render_backing(backing);
++            }
++        }
+         Ok(())
+--- a/drivers/gpu/drm/asahi/g17/freelist.rs
++++ b/drivers/gpu/drm/asahi/g17/freelist.rs
+@@ -576,9 +576,10 @@
+ }
+ 
+ /// A render pool retained by a logical context and every graph referencing it.
+-/// Its backing can be given back while the pool's free-list release has been
+-/// consumed and the client VM is evicted; a fresh backing is installed before
+-/// the pool is staged again.
++/// Its backing can be given back after its final free-list release is consumed
++/// when the client VM is evicted or a kept graph will never stage it again.
++/// The graph retains its pool identity independently of backing residency;
++/// a later staging of an evicted client's pool first installs fresh backing.
+ pub(crate) struct RenderPool {
+     storage: Arc<RenderStorage>,
+     /// Counts installed backings, so a re-armed backing is a new free-list
+--- a/drivers/gpu/drm/asahi/g17/runtime.rs
++++ b/drivers/gpu/drm/asahi/g17/runtime.rs
+@@ -1347,1 +1347,1 @@
+-    /// Backing of render pools vacated for evicted idle clients.
++    /// Released render backing vacated for evicted idle clients or kept graphs.

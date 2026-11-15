@@ -194,6 +194,26 @@ class LegacyHfpSetupBootTests(ProtectedSpeakerBootTests):
             self.verify()
 
 
+class FullBringupBootTests(LegacyHfpSetupBootTests):
+    VARIANT = "bringup-full"
+
+    def validate(self):
+        f = self.fixture
+        return candidate.validate_running_kernel(f.root, candidate.BASELINE_RELEASE, f.identity, f.deployment,
+            {candidate.TOKEN: f.receipt["trial_id"], **candidate.FULL_PARAMETERS},
+            running_release=candidate.VARIANTS[self.VARIANT]["release"])
+
+    def test_full_bringup_refuses_unobserved_ane_startup(self):
+        f = self.fixture
+        for value in (None, "0"):
+            cmdline = {candidate.TOKEN: f.receipt["trial_id"]}
+            if value is not None:
+                cmdline["ane_t6021.ane_observe_only"] = value
+            with self.assertRaisesRegex(RuntimeError, "observation-only"):
+                candidate.validate_running_kernel(f.root, candidate.BASELINE_RELEASE, f.identity, f.deployment,
+                    cmdline, running_release=candidate.VARIANTS[self.VARIANT]["release"])
+
+
 class BringupPublicationTests(unittest.TestCase):
     def test_validation_failure_restores_previous_default_not_baseline(self):
         with tempfile.TemporaryDirectory() as temporary:

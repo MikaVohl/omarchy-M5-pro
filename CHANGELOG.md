@@ -1,6 +1,14 @@
 # Changelog
 
 
+## Broad guarded bringup candidate - 2026-11-15
+
+- Prepare exact-build AVE compatibility admission and ANE build/IPC support with mandatory observation-only startup and firmware-requested parser bounds.
+- Integrate DP tunnel withdrawal handling and M5-safe retained GPU pool reclamation; preserve source-pinned working kernels, sensor/KIS DT and rollback.
+- Strengthen private native camera/voice inspection and unit-bound Bluetooth acquisition; retain hardware refusal where takeover, privacy or routing contracts remain unresolved.
+- Record proved 18-core thermal effort mapping without activating unresolved PMP/report or manual fan control.
+- Archive unreferenced ESP diagnostics with owner authorization and hash readback; preserve boot/rescue dependencies and record microphone-array data flow without speech-quality claims.
+
 ## Legacy HFP hardware results - 2026-11-15
 
 - Observe the HFP candidate boot and automatic protected speaker startup; pass fresh same-kernel wiring, native voicing and live 512-frame graph verification.

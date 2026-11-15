@@ -896,6 +896,34 @@ new kernel before normal playback, then require successful synchronous-link
 setup and a real Bluetooth-only microphone recording. Restore the prior
 profile/default routes and delete private recording buffers afterward.
 
+## Integrated guarded bringup candidate
+
+`--build-bringup-full` retains the existing protected-speaker/Touch ID stack
+and selects exact-build AVE compatibility, bounded ANE build/IPC support,
+peripheral wait handling and M5 retained-pool hardening. The existing exact
+sensor/KIS DT validator still applies; unproved thermal/HDMI/SD/camera/voice
+changes are not included.
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-bringup-full
+sudo python3 -B scripts/deploy-bringup.py --variant bringup-full
+```
+
+The first full candidate requires `ane_t6021.ane_observe_only=1`. This is a
+read-only boot/module option and a runtime authorization requirement, not
+permission to start ANE: recognized no-map reserved TEXT is measured and
+acquisition refuses before observer MMIO, power or DMA. A retained-file hash
+cannot replace a live preload pin. Later engine startup requires independently
+admitted identity/ownership and an explicitly authorized candidate.
+
+After a convenient manual boot, first verify boot identity and protected
+speaker graph. `scripts/test-ave-27_3.py --postboot-recipe` prints bounded
+compatibility encode/software-decode steps, not an automatic hardware job.
+`scripts/ane-27_3-proof.py` checks real stride-64 fp16 output after the production
+H17 compiler and ABI-3 runner; preparing inputs is not job proof. Hardware
+attachments, microphones/camera and stress/fan operations are owner-attended,
+announced and stopped on the first error; keep private samples out of publication.
+
 ## Source maintenance and checks
 
 ```sh

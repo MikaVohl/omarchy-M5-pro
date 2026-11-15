@@ -1,0 +1,57 @@
+From: J716s bringup <bringup@localhost>
+Subject: [PATCH] arm64: dts: apple: j716s: bind the native fast-die CE lanes
+
+The exact live J716s/T6050 ADT on the 18-core Mac17,8 has three
+44-byte fast-die-ctrl-ce-map records: MACC0, MACC1 and PACC_ANE,
+with lane indices 0, 1 and 2. Its CPU nodes independently identify
+six sawtooth cores in each of clusters 0 and 1 and six everest cores
+in cluster 2. FAST-DIE-CE is range ID 16, starts at PTD entry 0x258,
+has two entries and native flags 12. The existing drivers already
+implement the offsets, readiness check and effort-to-QoS limit.
+
+Evidence: live ADT region SHA256
+c1d226400749afb3d7144b3235737b475c43bc99165836d04e7502fbba870eae
+(749032 used bytes; firmware 27.3 beta1, mBoot-20457.60.65.0.1).
+Reference: https://github.com/aurora-silicon/linux/pull/1950
+
+IMPORTANT: this is not a PMP startup patch. The pinned J716s tree
+leaves pmp0 and pmp0_report disabled. Do not select this patch for a
+performance-qualified payload without separately admitting the native
+PMP/report startup contract. Until a bound report says PMP is running,
+cpufreq deliberately holds each cluster at its fail-safe fallback.
+
+No manual fan admission: read-only J716s sysfs confirms both tach,
+minimum, maximum and target channels, but does not expose F0md/F1md
+mode values or establish manual/target/zero-release semantics.
+https://github.com/aurora-silicon/linux/pull/1944 explicitly leaves
+J716s unqualified. Preserve its existing firmware fan policy and
+fan_control=N; no unsafe module-parameter bypass or new fan owner.
+
+--- a/arch/arm64/boot/dts/apple/t6050-j716s.dts
++++ b/arch/arm64/boot/dts/apple/t6050-j716s.dts
+@@ -437,17 +437,25 @@
+  * p-state in bits 9:5, target in 4:0, read on this board), which
+  * apple-soc-cpufreq drives through the T8112 compatible. A driver entry for
+  * apple,t6050-cluster-cpufreq matches the first string and takes over.
++ *
++ * This 18-core J716s ADT maps FAST-DIE-CE lanes 0/1/2 to MACC0/MACC1/
++ * PACC_ANE: CPUs 0-5 and 6-11 are sawtooth, CPUs 12-17 are everest.
++ * The existing driver enforces the PMP effort, holding its fallback
++ * limit until the report is bound and the PMP reports running.
+  */
+ &cpufreq_mc0 {
+ 	compatible = "apple,t6050-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++	apple,fast-die-effort = <&pmp0_report 0>;
+ };
+ 
+ &cpufreq_mc1 {
+ 	compatible = "apple,t6050-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++	apple,fast-die-effort = <&pmp0_report 1>;
+ };
+ 
+ &cpufreq_pc {
+ 	compatible = "apple,t6050-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++	apple,fast-die-effort = <&pmp0_report 2>;
+ };
+ 
+ /*

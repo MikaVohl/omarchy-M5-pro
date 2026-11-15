@@ -565,3 +565,34 @@ camera job is claimed.
   T6050 routing/call sequence was not established. No speculative vendor
   command, reset, kernel patch or further recording retry followed.
 
+## Integrated broad bringup source checks - 2026-11-15
+
+- All 15 selected patches composed against the immutable archive without fuzz
+  after correcting AVE/G17 patch context counts. No original source/build was
+  overwritten. The thermal mapping patch remains excluded for lack of PMP
+  startup admission; camera and voice remain hardware-refused.
+- Actual AVE admission/builders and ANE admission/reservation/IPC parser bodies
+  passed controls and behavioral negative controls. Missing host GENMASK and
+  remap-stub indentation were corrected without suppressing compiler warnings.
+- Peripheral production wait/owner/token checks passed; six thermal, 64 candidate
+  authorization, three ANE output, eleven native capture and five Bluetooth
+  acquisition cases passed. Shell syntax passed. Seven G17 production-body
+  cases and seven behavioral negative controls passed with pinned Rust 1.99.1.
+- Actual private AVE/native media, Bluetooth and camera inspectors ran in
+  matching private-owner directories after correctly refusing mismatched-owner
+  access. Geometry/CRC and native command differences are explicit; no captured
+  file digest was relabelled as a live firmware hash or engine authorization.
+- Ten unreferenced ESP artifacts passed copy/readback and archive hash checks;
+  selected/default/rescue dependencies unchanged, installed guard passed.
+- Approved microphone sample delivered exactly 10 seconds on all three array
+  channels, finite low-level audio on 0/1 and zero on 2. Recorder exit 1 at its
+  sample limit remains recorded; protected playback exit 0. The owner was away,
+  so no speech-quality pass is claimed. Audio buffers deleted.
+- Integrated kernel build started; no candidate reboot, AVE/ANE job, camera,
+  manual fan, physical USB/HDMI/dock/SD test or sleep was performed.
+
+- Initial G17 host extraction failed on namespace/type visibility in the fixture;
+  those fixture errors were corrected with compiler warnings still enforced.
+  All ownership/release assertions and negative controls then passed. Full
+  kernel compilation remains a separate required check.
+

@@ -2,10 +2,14 @@
 """Acquire only the exact-build native sources used to justify standard SCO.
 
 On this unit's native macOS (no Bluetooth activity required):
-  python3 -B prepare-bluetooth-native.py --output /private/tmp/j716s-beta-native
+  python3 -B prepare-bluetooth-native.py --unit-serial-sha256 LINUX_UNIT_SHA256 \
+      --output /private/tmp/j716s-beta-native
 
 For retained read-only APFS extractions pass --system-root SYSTEM_ROOT and
---cryptex-root CRYPTEX_ROOT. Neither filesystem is mounted or modified here.
+--cryptex-root CRYPTEX_ROOT and an externally anchored --platform-plist from
+the same unit's paired-macOS acquisition. Neither filesystem is mounted or
+modified here. Native mode verifies live IORegistry, model and System build;
+retained mode also requires the independently measured Linux unit identity.
 The source bundle contains the Beta launcher/identity, paired SystemVersion,
 the t2026-CentauriBeta IPC profile, bluetoothd, the small DriverKit cache and
 its symbols, and only Airship's inspected 611944-byte __TEXT segment from the
@@ -21,12 +25,15 @@ patch, not a microphone qualification. Private four-byte HDR SCO is unsupported.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import plistlib
 import stat
+import subprocess
 import sys
+import platform
 
 ROOT = Path(__file__).resolve().parents[1]
 IDENTIFIER = 'com.apple.driver.AppleCentauriBeta'
@@ -125,7 +132,7 @@ def acquire(root, cryptex=None):
                'build': BUILD, 'bundle_identifier': IDENTIFIER,
                'bundle_version': fields.get('CFBundleVersion'),
                'source_bundle': str(bundle.relative_to(root)), 'source_executable': executable,
-               'unit_identity': 'operator must supply same-unit System volume; not independently verified',
+               'source_unit_identity_verified': False,
                'sco_support_qualified': False, 'bluetooth_or_audio_activity_initiated': False,
                'protocol_sources_acquired': True,
                'native_header_mode': 'standard HCI SCO, 3 bytes; private HDR unsupported',
@@ -134,6 +141,31 @@ def acquire(root, cryptex=None):
                'files': {name: {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
                          for name, data in files.items()}}
     return files, receipt
+
+
+def bind_unit(platform_plist, unit_sha256):
+    """Bind source acquisition to actual platform evidence, never a board override."""
+    if (len(unit_sha256) != 64 or any(char not in '0123456789abcdef' for char in unit_sha256)):
+        raise Refused('unit identity must be an independently retained lowercase SHA256')
+    spec = importlib.util.spec_from_file_location('bluetooth_camera_identity', ROOT / 'scripts/prepare-camera-firmware.py')
+    camera = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(camera)
+    if platform_plist is None:
+        profile = json.loads((ROOT / 'profiles/j716s.json').read_text())
+        identity, data = camera.als_tool().macos_identity(profile, unit_sha256)
+        identity['identity_source'] = 'live-paired-macos-platform-registry'
+    else:
+        path, anchor = platform_plist
+        data = camera.read_regular(path, private=True)
+        if hashlib.sha256(data).hexdigest() != anchor:
+            raise Refused('retained platform plist differs from its external SHA256 anchor')
+        model, serial = camera.als_tool().platform_identity(data)
+        identity = camera.current_identity()
+        if (model != identity['model'] or hashlib.sha256(serial.encode('ascii')).hexdigest() != unit_sha256 or
+                identity['unit_serial_sha256'] != unit_sha256):
+            raise Refused('retained platform evidence is not the current exact J716s unit')
+        identity['identity_source'] = 'anchored-paired-macos-platform-matched-to-live-linux'
+    return identity, data
 
 
 def save(directory, files, receipt):
@@ -152,15 +184,34 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--system-root', type=Path, default=Path('/'), help='existing same-unit read-only System volume root')
     parser.add_argument('--cryptex-root', type=Path, help='same-build read-only Cryptex OS root; defaults to System/Cryptexes/OS')
+    parser.add_argument('--unit-serial-sha256', required=True, help='independently retained Linux unit hash')
+    parser.add_argument('--platform-plist', type=Path, help='private paired-macOS platform evidence for retained mode')
+    parser.add_argument('--platform-sha256', help='external SHA256 anchor for --platform-plist')
     parser.add_argument('--output', type=Path, required=True, help='new private directory outside repository')
     args = parser.parse_args()
     try:
+        if bool(args.platform_plist) != bool(args.platform_sha256):
+            raise Refused('retained platform evidence and its external SHA256 must be supplied together')
+        if args.platform_plist is None and (platform.system() != 'Darwin' or args.system_root != Path('/')):
+            raise Refused('retained System acquisition requires anchored paired-macOS platform evidence')
+        roots = (args.system_root, args.cryptex_root or args.system_root / 'System/Cryptexes/OS')
+        if any(not (os.statvfs(root).f_flag & os.ST_RDONLY) for root in roots):
+            raise Refused('System and Cryptex sources must already be read-only')
+        evidence = (args.platform_plist, args.platform_sha256) if args.platform_plist else None
+        identity, platform_data = bind_unit(evidence, args.unit_serial_sha256)
         files, receipt = acquire(args.system_root, args.cryptex_root)
+        if identity['macos_build'] != receipt['build']:
+            raise Refused('platform and source acquisition builds differ')
+        files['platform.plist'] = platform_data
+        receipt.update({**identity, 'target_unit_identity_verified': True,
+                        'source_unit_identity_verified': args.platform_plist is None})
+        receipt['files']['platform.plist'] = {'bytes': len(platform_data),
+                                            'sha256': hashlib.sha256(platform_data).hexdigest()}
         directory = save(args.output, files, receipt)
         print(f'Exact native SCO sources acquired privately: {directory}. No radio or audio operation issued.')
         return 0
-    except (OSError, ValueError, plistlib.InvalidFileException):
-        print('Native acquisition refused: exact-build Beta System-volume executable unavailable/invalid.', file=sys.stderr)
+    except (OSError, ValueError, KeyError, plistlib.InvalidFileException, subprocess.SubprocessError) as error:
+        print('Native acquisition refused: ' + str(error), file=sys.stderr)
         return 1
 
 
