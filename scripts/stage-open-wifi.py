@@ -173,11 +173,12 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
         require(record(kernel / name) == {"size": item["bytes"], "sha256": item["sha256"]}, "candidate artifact differs: " + name)
     baseline_artifacts = ((".config",) if variant in candidate_boot.ONE_SHOT_PARAMETERS else
                           ("t6050-j716s.dtb",) if variant == "bringup" else
+                          () if variant == "touchid" else
                           (".config", "t6050-j716s.dtb"))
     for name in baseline_artifacts:
         require(build["artifacts"][name]["sha256"] == identity["kernel_artifacts"][name]["sha256"], "candidate changed baseline artifact: " + name)
-    if variant == "bringup":
-        require(baseline_config is not None, "bringup requires the hash-bound baseline config")
+    if variant in candidate_boot.CONFIG_VARIANTS:
+        require(baseline_config is not None, variant + " requires the hash-bound baseline config")
         baseline_config = Path(baseline_config).resolve()
         check_regular(baseline_config)
         expected = identity["kernel_artifacts"][".config"]
@@ -224,13 +225,13 @@ def build_candidate(directory, identity, deployment, variant="open-wifi", baseli
     require(image[0x38:0x3c] == b"ARM\x64", "candidate is not an ARM64 Image")
     text_offset, image_size = struct.unpack_from("<QQ", image, 8)
     require(len(image) <= image_size and 0 < text_offset + image_size <= 128 * 1024**2, "candidate exceeds the enrolled kernel window")
-    dtb = kernel / "t6050-j716s.dtb" if variant in candidate_boot.ONE_SHOT_PARAMETERS else ESP / "aurora/root/t6050-j716s.dtb"
+    dtb = kernel / "t6050-j716s.dtb" if variant in candidate_boot.BUILD_DTB_VARIANTS else ESP / "aurora/root/t6050-j716s.dtb"
     initramfs_path = "aurora/root/initramfs.cpio.gz" if variant == "sep-sensor" else boot_prefix + "/initramfs.cpio.gz"
     files = [(boot_prefix + "/Image.gz", (kernel / "Image.gz").read_bytes()),
              (boot_prefix + "/t6050-j716s.dtb", dtb.read_bytes()),
              (initramfs_path, (ESP / "aurora/root/initramfs.cpio.gz").read_bytes())]
     payload, _, inventory = helpers.boot_payload(bare, deployment["esp_partition_uuid"], files, encoded)
-    if variant == "bringup":
+    if variant in candidate_boot.CONFIG_VARIANTS:
         for name, source in ((".config", kernel / ".config"), ("baseline.config", baseline_config)):
             data = source.read_bytes()
             files.append((boot_prefix + "/" + name, data))

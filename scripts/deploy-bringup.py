@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Check/deploy the pinned Bluetooth bringup candidate, or restore its previous default.
+"""Check/deploy a pinned persistent kernel variant (bringup, touchid), or restore its previous default.
+
+bringup is the Bluetooth kernel. touchid is bringup plus the J716s sensor wiring
+and Touch ID SEP profile; its DTB delta is checked exactly before deployment.
 
 Never reboot, arm a trial, replace a running kernel's modules, or alter baseline
 root/rescue dependencies. Deployment is experimental, not physical qualification.
@@ -24,13 +27,25 @@ spec.loader.exec_module(selection)
 stage = selection.stage
 candidate = stage.candidate_boot
 require = stage.require
-RELEASE = candidate.BRINGUP_RELEASE
-PREFIX = "aurora/bringup"
-RECEIPT = Path("/etc/j716s/bringup.json")
-DEFAULT = Path("/etc/j716s/bringup-default.json")
-BACKUP_RECEIPT = Path("/etc/j716s/bringup-backup.json")
-BACKUPS = Path("/var/lib/j716s/bringup-backups")
 HELPER = stage.GUARD.parent / "candidate_boot.py"
+DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE), "touchid": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE)}
+# Defaults a rollback may restore besides the baseline payload.
+PREVIOUS_VARIANTS = ("open-wifi", "bringup")
+
+
+def select(variant):
+    global VARIANT, RELEASE, PREFIX, RECEIPT, DEFAULT, BACKUP_RECEIPT, BACKUPS
+    require(variant in DEPLOYABLE, "unsupported persistent variant")
+    VARIANT = variant
+    RELEASE = candidate.VARIANTS[variant]["release"]
+    PREFIX = "aurora/" + variant
+    RECEIPT = Path("/etc/j716s/" + variant + ".json")
+    DEFAULT = Path("/etc/j716s/" + variant + "-default.json")
+    BACKUP_RECEIPT = Path("/etc/j716s/" + variant + "-backup.json")
+    BACKUPS = Path("/var/lib/j716s/" + variant + "-backups")
+
+
+select("bringup")
 
 
 def private_backups():
@@ -96,10 +111,15 @@ def rollback():
     previous, record = previous_backup(deployment)
     expected = record["files"]["previous-boot.bin"]["sha256"]
     if expected != deployment["root_payload_sha256"]:
-        old = candidate.verify_candidate(Path("/"), stage.BASE, identity, deployment, "open-wifi")
-        old_payload = next(entry["sha256"] for entry in old["files"] if entry["path"] == "aurora/open-wifi.bin")
-        require(expected == old_payload, "previous default is not the preserved open-WiFi payload")
-        candidate._validate_persistent_selection(Path("/"), deployment, old, expected)
+        for variant in PREVIOUS_VARIANTS:
+            if not Path("/etc/j716s/" + variant + "-default.json").exists():
+                continue
+            old = candidate.verify_candidate(Path("/"), stage.BASE, identity, deployment, variant)
+            if next(entry["sha256"] for entry in old["files"] if entry["path"] == "aurora/" + variant + ".bin") == expected:
+                candidate._validate_persistent_selection(Path("/"), deployment, old, expected)
+                break
+        else:
+            raise RuntimeError("previous default is neither the baseline nor a preserved pinned default")
     selection.atomic_copy(previous, Path("/boot/aurora/boot.bin"), expected)
     subprocess.run(["sync", "-f", "/boot"], check=True)
     candidate.validate_boot_selection(Path("/"), stage.BASE, identity, deployment)
@@ -109,14 +129,21 @@ def rollback():
 def deploy(activate, baseline_config):
     identity, deployment = selection.live_target()
     selection.guard_check()
-    require(os.uname().release in (stage.BASE, stage.RELEASE), "deploy only from the preserved baseline or tested open-WiFi kernel")
+    require(os.uname().release in DEPLOYABLE[VARIANT], "deploy " + VARIANT + " only from " + ", ".join(DEPLOYABLE[VARIANT]))
     candidate.validate_boot_selection(Path("/"), stage.BASE, identity, deployment)
     for path in (RECEIPT, DEFAULT, BACKUP_RECEIPT, Path("/boot") / (PREFIX + ".bin"),
                  Path("/boot") / PREFIX, Path("/usr/lib/modules") / RELEASE):
-        require(not path.exists() and not path.is_symlink(), "bringup already staged; inspect/rollback instead of overwriting: " + str(path))
-    with tempfile.TemporaryDirectory(prefix="j716s-bringup-") as temporary:
+        require(not path.exists() and not path.is_symlink(), VARIANT + " already staged; inspect/rollback instead of overwriting: " + str(path))
+    with tempfile.TemporaryDirectory(prefix="j716s-" + VARIANT + "-") as temporary:
         files, receipt, modules = stage.build_candidate(temporary, identity, deployment,
-                                                       variant="bringup", baseline_config=baseline_config)
+                                                       variant=VARIANT, baseline_config=baseline_config)
+        if VARIANT == "touchid":
+            # Exactly the sensor trial's DT delta (pinned SPI2/GPIO wiring, path-matched renumbering).
+            spec = importlib.util.spec_from_file_location("j716s_sep_stage", PROJECT / "scripts/stage-sep-probe.py")
+            sep_stage = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sep_stage)
+            sep_stage.select("sep-sensor")
+            sep_stage.validate_dtb_delta(next(data for name, data in files if name == PREFIX + "/t6050-j716s.dtb"))
         needed = sum(len(data) for _, data in files) + 8 * 1024**2
         require(shutil.disk_usage("/boot").free >= needed, "insufficient ESP space; no retained files will be deleted")
         # Exercise the existing installed guard with the new helper before changing it.
@@ -135,10 +162,10 @@ def deploy(activate, baseline_config):
             stage.atomic(Path("/boot") / name, data)
         stage.atomic(RECEIPT, (json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode())
         stage.atomic(HELPER, (stage.SUPPORT / "candidate_boot.py").read_bytes(), 0o644)
-        candidate.verify_candidate(Path("/"), stage.BASE, identity, deployment, "bringup")
+        candidate.verify_candidate(Path("/"), stage.BASE, identity, deployment, VARIANT)
         selection.guard_check()
         selected = next(entry["sha256"] for entry in receipt["files"] if entry["path"] == PREFIX + ".bin")
-        persistent = {"schema": 1, "kind": "j716s-bringup-default", "kernel_release": RELEASE,
+        persistent = {"schema": 1, "kind": "j716s-" + VARIANT + "-default", "kernel_release": RELEASE,
                       "candidate_receipt_sha256": stage.digest(RECEIPT),
                       "baseline_payload_sha256": deployment["root_payload_sha256"],
                       "selected_payload_sha256": selected}
@@ -152,9 +179,9 @@ def deploy(activate, baseline_config):
 
         publish(Path("/boot") / (PREFIX + ".bin"), Path("/boot/aurora/boot.bin"),
                 backup / "previous-boot.bin", originals["files"]["previous-boot.bin"]["sha256"], selected, validate)
-        print("DEPLOYED: experimental bringup candidate is the next persistent default; no reboot or trial arming.")
+        print("DEPLOYED: experimental " + VARIANT + " candidate is the next persistent default; no reboot or trial arming.")
         print("Previous default and runtime bytes preserved at " + str(backup))
-        print("Physical boot, Bluetooth profiles, protected Wi-Fi regressions and recovery remain unqualified.")
+        print("Physical boot, peripherals and recovery with this kernel remain unqualified until observed.")
 
 
 def main():
@@ -162,10 +189,12 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--activate", action="store_true", help="deploy verified experimental candidate as persistent default")
     modes.add_argument("--rollback", action="store_true", help="restore the previous authorized default")
+    parser.add_argument("--variant", choices=sorted(DEPLOYABLE), default="bringup")
     parser.add_argument("--acknowledge-unbooted-risk", action="store_true", help="authorize default activation before physical qualification")
     parser.add_argument("--baseline-config", type=Path, default=PROJECT / "outputs/kernel-open-wifi-candidate/.config",
                         help="baseline .config; must match the installed image identity")
     args = parser.parse_args()
+    select(args.variant)
     require(not args.activate or args.acknowledge_unbooted_risk, "activation requires --acknowledge-unbooted-risk")
     if args.rollback:
         rollback()

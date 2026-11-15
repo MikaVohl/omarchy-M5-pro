@@ -43,6 +43,12 @@ SENSOR_MATERIAL_FILES = frozenset({SENSOR_PROVENANCE,
 BLUETOOTH_CONFIG = frozenset({"CONFIG_BT_BREDR", "CONFIG_BT_LE", "CONFIG_BT_RFCOMM",
                             "CONFIG_BT_BNEP", "CONFIG_INPUT_MISC", "CONFIG_INPUT_UINPUT"})
 CONFIG_DELTA = BLUETOOTH_CONFIG | {"CONFIG_BT_LE_L2CAP_ECRED"}
+TOUCHID_RELEASE = BASELINE_RELEASE + "-touchid"
+SEP_SENSOR_PATCH_SHA256 = "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5"
+# Variants that carry the Bluetooth config delta (and its two configs on the ESP).
+CONFIG_VARIANTS = frozenset({"bringup", "touchid"})
+# Variants whose DTB is their own build's, bound to the build manifest.
+BUILD_DTB_VARIANTS = frozenset({"sep-probe", "sep-sensor", "touchid"})
 VARIANTS = {
     "open-wifi": {"release": CANDIDATE_RELEASE, "patches": {"kernel-j716s-open-wifi.patch": PATCH_SHA256}},
     "bringup": {"release": BRINGUP_RELEASE, "patches": {
@@ -55,7 +61,14 @@ VARIANTS = {
     "sep-sensor": {"release": SEP_SENSOR_RELEASE, "patches": {
         "kernel-j716s-open-wifi.patch": PATCH_SHA256,
         "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
-        "kernel-j716s-sep-sensor.patch": "c8eba0627fdfdd1912882eed615203c3a0accd375774db1dd6c8d30a4958abf5"}},
+        "kernel-j716s-sep-sensor.patch": SEP_SENSOR_PATCH_SHA256}},
+    "touchid": {"release": TOUCHID_RELEASE, "patches": {
+        "kernel-j716s-open-wifi.patch": PATCH_SHA256,
+        "kernel-j716s-bluetooth.patch": BLUETOOTH_PATCH_SHA256,
+        "kernel-g17-unblamed-recovery-diagnostics.patch": "07cb60b0ae566083b5300e9d824e847f6f6d467380ac68b9c14c051a792c16ce",
+        "kernel-j716s-sep-probe.patch": SEP_PROBE_PATCH_SHA256,
+        "kernel-j716s-sep-sensor.patch": SEP_SENSOR_PATCH_SHA256,
+        "kernel-j716s-touchid.patch": "dc881cba55de54c5dc1b2c87d6203f8591198c92343cc2fc9ae358b7121b838b"}},
 }
 
 
@@ -64,7 +77,7 @@ def variant_paths(variant):
     prefix = "aurora/" + variant
     files = {prefix + ".bin", *(prefix + "/" + name for name in
              ("Image.gz", "t6050-j716s.dtb", "initramfs.cpio.gz"))}
-    if variant == "bringup":
+    if variant in CONFIG_VARIANTS:
         files.update({prefix + "/.config", prefix + "/baseline.config"})
     if variant == "sep-sensor":
         files.remove(prefix + "/initramfs.cpio.gz")
@@ -230,7 +243,8 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
         require(isinstance(artifact, dict) and set(artifact) == {"bytes", "sha256"}
                 and type(artifact["bytes"]) is int and artifact["bytes"] >= 0
                 and sha256(artifact["sha256"]), "invalid candidate build artifact")
-    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), **{name: (".config",) for name in ONE_SHOT_PARAMETERS}}
+    baseline_artifacts = {"bringup": ("t6050-j716s.dtb",), "touchid": (),
+                          **{name: (".config",) for name in ONE_SHOT_PARAMETERS}}
     for name in baseline_artifacts.get(variant, (".config", "t6050-j716s.dtb")):
         baseline = identity["kernel_artifacts"][name]
         require(artifacts[name]["sha256"] == baseline["sha256"]
@@ -246,7 +260,7 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
         baseline = [entry for entry in dependencies if entry["path"] == "aurora/root/" + name]
         require(len(baseline) == 1, "baseline candidate dependency is missing or duplicated")
         entry = files["aurora/root/" + name if variant == "sep-sensor" and name == "initramfs.cpio.gz" else prefix + "/" + name]
-        if variant in ONE_SHOT_PARAMETERS and name == "t6050-j716s.dtb":
+        if variant in BUILD_DTB_VARIANTS and name == "t6050-j716s.dtb":
             require(entry["sha256"] == artifacts[name]["sha256"]
                     and entry["size"] == artifacts[name]["bytes"],
                     "candidate DTB build binding differs")
@@ -258,7 +272,7 @@ def verify_candidate(root, baseline_release, identity, deployment, variant="open
     if variant == "sep-sensor":
         verify_sensor_material(root, receipt["sensor_firmware"])
     modules = inventory(receipt["modules"])
-    if variant == "bringup":
+    if variant in CONFIG_VARIANTS:
         for name, expected in ((".config", artifacts[".config"]),
                                ("baseline.config", {"bytes": identity["kernel_artifacts"][".config"]["size_bytes"],
                                                     "sha256": identity["kernel_artifacts"][".config"]["sha256"]})):

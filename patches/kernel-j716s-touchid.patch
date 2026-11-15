@@ -1,0 +1,65 @@
+--- i/drivers/soc/apple/profile.rs
++++ w/drivers/soc/apple/profile.rs
+@@ -485,6 +485,15 @@ pub(crate) struct PlatformProfile {
+     ..T6050
+ };
+ 
++/// J716s Touch ID: J714s's sensor and nonce protocol with macOS's measured
++/// registration capacity. Selected unless `keystore_only=1` asks for the
++/// discovery-only profile above.
++pub(crate) const T6050_J716S: PlatformProfile = PlatformProfile {
++    name: "T6050/J716s",
++    shmem_capacity: 0x1c000,
++    ..T6050
++};
++
+ /// MacBook Air M4 (J713). The J713 ADT (26.6.2, 25G83) puts the Mesa sensor
+ /// on spi2 at `0x3ad108000`, 8 MHz, chip select 0, with power on the NUB GPIO
+ /// controller (pin 28) and data-ready on AP GPIO 199. The SEP is
+@@ -658,7 +667,11 @@ fn t6020_profile() -> &'static PlatformProfile {
+ /// rather than guessed at, so the driver cannot run a handshake with the wrong
+ /// geometry.
+ pub(crate) fn detect() -> Result<&'static PlatformProfile> {
+-    select(&machine_has, &t6020_profile)
++    let profile = select(&machine_has, &t6020_profile)?;
++    if profile.name == T6050_J716S_PROBE.name && !crate::attach::discovery_only_requested() {
++        return Ok(&T6050_J716S);
++    }
++    Ok(profile)
+ }
+ 
+ /// The profile for a machine whose root `compatible` list `has` answers for,
+@@ -813,6 +826,10 @@ fn t8132_selection_is_limited_to_the_m4_airs() {
+         assert!(T6050_J716S_PROBE.shmem_capacity == 0x1c000);
+         assert!(!T6050_J716S_PROBE.persistent_enrol);
+         assert!(T6050.shmem_capacity == 0x40000);
++        assert!(T6050_J716S.shmem_capacity == 0x1c000);
++        assert!(T6050_J716S.persistent_enrol);
++        assert!(T6050_J716S.xart_guard == 1);
++        assert!(T6050_J716S.sensor.controller_base == 0x5_0510_8000);
+         assert_eq!(picked(&[b"apple,t6050"]), None);
+     }
+ 
+--- i/drivers/soc/apple/sep.rs
++++ w/drivers/soc/apple/sep.rs
+@@ -3547,6 +3547,20 @@ fn init(module: &'static ThisModule) -> impl PinInit<Self, Error> {
+                                 pr_info!("J716s SEP safety mode: discovery-only, capacity 0x1c000, xART writes/provisioning/trusted keys/FileVault/sensor/persistence disabled, guard 2; complete_attach forbidden\n");
+                             }
+                         }
++                        if p.name == profile::T6050_J716S.name {
++                            // Touch ID needs neither enclave key API; xART stays guarded.
++                            if module_parameters::trusted_keys.value() != 0
++                                || module_parameters::filevault_api.value() != 0
++                                || module_parameters::xart_guard.value() == 0
++                            {
++                                pr_err!("J716s Touch ID requires trusted_keys=0 filevault_api=0 and a nonzero xart_guard; refusing before DT/DMA/mailbox changes\n");
++                                return Err(EINVAL);
++                            }
++                            pr_info!("J716s SEP Touch ID mode: capacity 0x1c000, xart_writes={} provision_keybag={} xart_guard={}, trusted keys and FileVault API disabled\n",
++                                module_parameters::xart_writes.value(),
++                                module_parameters::provision_keybag.value(),
++                                module_parameters::xart_guard.value());
++                        }
+                         if matches!(p.bootstrap, profile::Bootstrap::WarmRegister) {
+                             dt::enable_sep_and_dart(p.dart_window)?;
+                         }

@@ -1,0 +1,46 @@
+--- a/usr/lib/omarchy-mac/touchid-eligibility
++++ b/usr/lib/omarchy-mac/touchid-eligibility
+@@ -51,7 +51,8 @@
+   echo unsupported:m1-family
+   exit 0
+ elif ! compatible apple,t8112 && ! compatible apple,t6020 && ! compatible apple,t6021 && ! compatible apple,t8140 &&
+-  ! { compatible apple,t8122 && { compatible apple,j613 || compatible apple,j615; }; }; then
++  ! { compatible apple,t8122 && { compatible apple,j613 || compatible apple,j615; }; } &&
++  ! { compatible apple,t6050 && compatible apple,j716s; }; then
+   echo unsupported:board
+   exit 0
+ fi
+@@ -64,14 +65,20 @@
+ 
+ # The Neo's calibration must be the sealed form its installer writes; the
+ # other boards' can be carved from the iBoot System Container at enable time.
++# J716s (omarchy-M5-pro overlay) also needs its prepared sealed calibration and
++# sensor key, both named by the sensor node; firmware-name lists the calibration first.
+ calibration=apple/mesa_calibration.bin
+ if [[ -r $sensor/firmware-name ]]; then
+-  calibration=$(tr -d '\0' <"$sensor/firmware-name")
++  calibration=$(tr '\0' '\n' <"$sensor/firmware-name" | head -n 1)
+ fi
+-if ! installed "$calibration" && { compatible apple,t8140 || ! can_extract extract-mesa-calibration; }; then
++if ! installed "$calibration" && { compatible apple,t8140 || compatible apple,j716s || ! can_extract extract-mesa-calibration; }; then
+   echo unsupported:no-calibration
+   exit 0
+ fi
++if compatible apple,j716s && ! installed apple/msrk-j716s.bin; then
++  echo unsupported:no-root-key
++  exit 0
++fi
+ # The Neo's sensor key is rebuilt once the owner agrees, by touchid-root-key
+ # (Python), from the factory records asahi-installer leaves on the ESP.
+ if compatible apple,t8140 && ! installed apple/msrk-j700.bin &&
+--- a/usr/lib/omarchy-mac/touchid-enable
++++ b/usr/lib/omarchy-mac/touchid-enable
+@@ -92,7 +92,7 @@
+ sensor=$("$helpers/touchid-eligibility" sensor)
+ calibration=apple/mesa_calibration.bin
+ if [[ -r $sensor/firmware-name ]]; then
+-  calibration=$(tr -d '\0' <"$sensor/firmware-name")
++  calibration=$(tr '\0' '\n' <"$sensor/firmware-name" | head -n 1)
+ fi
+ if ! installed "$calibration"; then
+   echo "Copying this Mac's Touch ID calibration..."
