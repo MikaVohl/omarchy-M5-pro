@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Paired-macOS acquisition — 2026-11-15
+
+- Fix portable speaker reference tuning-root paths in preparation, native capture and comparison; capture a genuine same-unit six-channel native AudioUnit reference without audio-device access.
+- Admit the native camera daemon's root-owned hardlinks only on read-only System storage; retain private-package single-link, symlink, bounds and source/identity guards with boundary regressions.
+- Recover genuine 193-byte ALS CalibrationData and preserve camera/media native evidence privately; keep installation, activation, controller parity and first-DMA qualification separate.
+- Pass the existing full-volume speaker voicing gate against native macOS on all 182 measured cells using the original hash-bound ARM64 compiler and a matching-source ARM64 renderer; keep the private attestation uninstalled and playback guarded.
+
 ## Speaker-priority native bringup — 2026-11-14
 
 - Recognize the exact T6050 speaker transport and observe six-amp/twelve-sense silent hardware wiring, lease-expiry and owner-death containment; keep audible playback guarded pending native DSP/controller parity.

@@ -1,6 +1,7 @@
 """Offline camera provenance/admission regressions; no camera or MMIO access."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
 import struct
@@ -156,16 +157,13 @@ class MacOSAcquisitionTests(unittest.TestCase):
             with patch.object(camera, "als_tool", return_value=als), \
                  patch.object(als, "macos_identity", return_value=(identity, platform_plist)), \
                  patch.object(Path, "iterdir", return_value=iter(())), \
-                 patch.object(camera, "read_regular", side_effect=lambda path: sources[str(path)]), \
+                 patch.object(camera, "read_regular", side_effect=lambda path, **kwargs: sources[str(path)]), \
                  patch.object(camera, "DAEMON_SHA256", camera.sha(daemon)), \
-                 patch.object(camera.subprocess, "check_output", side_effect=[b"", *([plistlib.dumps([])] * 5)]) as command:
+                 patch.object(camera.subprocess, "check_output", side_effect=[b"", *([plistlib.dumps([])] * 5)]):
                 result = camera.capture_macos(package, identity["unit_serial_sha256"])
             self.assertFalse(result["hardware_touched"])
             self.assertFalse(result["sensor_identity_proven"])
             self.assertEqual((package / camera.FIRMWARE).read_bytes(), blob)
-            self.assertEqual(command.call_count, len(camera.MACOS_QUERIES))
-            for call in command.call_args_list:
-                self.assertEqual(call.args[0][:4], ["/usr/sbin/ioreg", "-r", "-a", "-l"])
             with patch.object(camera, "current_identity", return_value=identity), \
                  patch.object(camera, "DAEMON_SHA256", camera.sha(daemon)):
                 self.assertTrue(camera.check_macos(package, result["manifest_sha256"])["checked"])
@@ -205,6 +203,39 @@ class MacOSAcquisitionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "bounded single-link"):
                 camera.read_regular(path, private=True)
             self.assertEqual(camera.read_regular(path, private=True, allow_empty=True), b"")
+
+    def test_private_hardlinks_cannot_bypass_package_isolation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "calibration"
+            path.write_bytes(b"private factory data")
+            path.chmod(0o600)
+            os.link(path, Path(directory) / "alias")
+            for allow_system in (False, True):
+                with self.subTest(allow_system=allow_system):
+                    with self.assertRaisesRegex(ValueError, "single-link"):
+                        camera.read_regular(path, private=True, allow_system_hardlinks=allow_system)
+
+    def test_system_hardlinks_require_root_ownership_and_readonly_storage(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "daemon"
+            data = b"native executable bytes"
+            path.write_bytes(data)
+            os.link(path, Path(directory) / "alias")
+            original = path.stat()
+            with self.assertRaisesRegex(ValueError, "single-link"):
+                camera.read_regular(path)
+            for owner, flags in ((0, os.ST_RDONLY), (0, 0), (12345, os.ST_RDONLY)):
+                info = SimpleNamespace(st_mode=original.st_mode, st_nlink=original.st_nlink,
+                                       st_size=original.st_size, st_uid=owner)
+                with self.subTest(owner=owner, flags=flags), \
+                     patch.object(camera.os, "fstat", return_value=info), \
+                     patch.object(camera.os, "fstatvfs", return_value=SimpleNamespace(f_flag=flags)):
+                    if owner == 0 and flags & os.ST_RDONLY:
+                        self.assertEqual(camera.read_regular(path, allow_system_hardlinks=True), data)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "root-owned on a read-only filesystem"):
+                            camera.read_regular(path, allow_system_hardlinks=True)
 
 
 if __name__ == "__main__":

@@ -424,3 +424,37 @@ No speaker DSP/controller parity, nonzero playback, headset microphone,
 encoder/ANE startup, camera capture or ALS activation is claimed. New kernel
 qualification requires its own attended boot and hardware checks.
 
+## Paired-macOS acquisition checks — 2026-11-15
+
+- SSH host identity was verified independently; actual Darwin/model/build and
+  same-unit identity passed before hardware acquisition.
+- The native speaker capture reproduced a nonexistent `tuning/audio-tuning`
+  path. Preparation, capture and comparison now use the actual portable
+  `tuning/` root. The repaired capture produced 1,159,200 frames in six lanes;
+  external manifest, complete file inventory, finite samples and native-not-
+  modelled reference admission passed after transfer.
+- ALS capture recovered one genuine 193-byte CalibrationData. Preserved platform,
+  ALS plist and capture receipt hashes matched; no HmCA conversion or install.
+- Camera capture reproduced a valid native System daemon with two hardlinks.
+  Explicit root-owned/read-only System admission repaired it without relaxing
+  private-package isolation. Repaired acquisition and all transferred manifest
+  byte counts/source hashes passed; no sensor/privacy/ABI qualification claim.
+- Camera regressions passed, including default/private hardlink refusal and
+  root-owned/read-only admission with writable/non-root refusal. The first run
+  lacked the pinned ADT parser; its exact source/hash prerequisite was restored,
+  then only the dependency-blocked test groups were rerun. Eight existing native
+  reference-admission cases passed.
+- Original media acquisition succeeded. Its externally anchored bundle passed
+  `capture-media-macos.py --check`; all 13 source records survived transfer.
+  Empty ANE name queries and unresolved native engine contracts remain explicit.
+- The original hash-bound ARM64 compiler and matching-source ARM64 renderer
+  executed under QEMU with a digest-pinned GNU loader/runtime. The full-volume
+  native comparison passed all 182 measured cells within +0.25/-1.0 dB;
+  observed extrema were +0.184/-0.048 dB. Renderer build identity was
+  aarch64-unknown-linux-gnu, Rust 1.91.1; no compiler binding was replaced.
+  This is an offline voicing pass, not controller/volume/graph/safety or playback
+  qualification. The private attestation remains uninstalled.
+- Native inputs, failure logs and returned manifests remain private on both
+  machines. No Linux hardware identity was simulated and no reboot, microphone,
+  nonzero speaker, camera/encoder/ANE job or ALS activation was performed.
+

@@ -174,7 +174,7 @@ def prepare(args):
     key = json.loads(run([args.compiler, "voicing-check", "--key-only", *base]))
     selection = dump["tuning"]["selection"]
     variant = {"aid": 41, "speaker_id": meta["speaker_id"], "also_speaker_ids": [],
-               "tree": str((tuning / "audio-tuning").resolve()), "key": key["key"],
+               "tree": str(tuning.resolve()), "key": key["key"],
                **{k: Path(selection[k]).name if selection.get(k) else None for k in ("strip", "propstrip", "graph")}}
     save(args.output / "variants.json", {"law": key["law"], "build": BUILD, "variants": [variant]})
     run([sys.executable, source / "tools/diffrig/aidgate/gate_prog.py", args.output / "program"])
@@ -212,7 +212,7 @@ def capture(args):
     case_name = "AID41-spid" + str(request["speaker_id"])
     case = args.output / "refs" / case_name
     case.mkdir(mode=0o700, parents=True)
-    cmd = [sys.executable, source / "tools/diffrig/aidgate/gr.py", "--tunings", args.request / "tuning/audio-tuning",
+    cmd = [sys.executable, source / "tools/diffrig/aidgate/gr.py", "--tunings", args.request / "tuning",
            "--aid", "41", "--graph", variant["graph"], "--strip", variant["strip"],
            "--in", args.request / "program.f32", "--out", case / "unit_in.f32", "--meta", case / "meta.json",
            "--box-host", host]
@@ -240,7 +240,7 @@ def compare(args):
     if digest(args.bin / "aurora-speaker-tuning") != request["compiler_sha256"] or (args.bin / "REV").read_text().strip() != REV:
         raise ValueError("comparison compiler revision/build differs from request")
     variant_doc = json.loads((args.request / "variants.json").read_text())
-    variant_doc["variants"][0]["tree"] = str((args.request / "tuning/audio-tuning").resolve())
+    variant_doc["variants"][0]["tree"] = str((args.request / "tuning").resolve())
     new_directory(args.output)
     save(args.output / "variants.json", variant_doc)
     env = {**os.environ, "SGV2_MACOS_BUILD": BUILD}

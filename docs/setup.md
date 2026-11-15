@@ -769,8 +769,17 @@ macOS, `capture` verifies the independent request-manifest hash, unit/build and
 native AudioDSP hash before compiling the offline AudioUnit host. It opens no
 audio device. `compare` verifies the returned manifest and uses a matching
 compiler/voicing-render revision. Preparation/comparison needs NumPy; native
-capture needs Python3 and Xcode command-line tools. See each subcommand's
-`--help` for its required paths and external hash anchors.
+capture needs Python 3.11+ and Xcode command-line tools with the owner-reviewed
+license accepted. Apple's bundled Python 3.9 lacks `hashlib.file_digest`; select
+an already installed newer Python in `PATH` before running the capture launcher.
+See each subcommand's `--help` for its required paths and external hash anchors.
+
+Portable requests store `AID41/` directly under `tuning/`; capture and comparison
+must use that directory, not a nonexistent `tuning/audio-tuning/`. The native
+camera daemon can have multiple hardlinks in the read-only System snapshot.
+Only its explicit System-source read admits root-owned read-only hardlinks;
+private packages, symlinks and untrusted/writable sources remain rejected.
+
 
 The first capture covers full-volume voicing only. Controller-state parity,
 volume-dependent laws, generated graph timing and protected playback remain

@@ -58,7 +58,7 @@ def encoded(report):
     return (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
 
 
-def read_regular(path, private=False, allow_empty=False):
+def read_regular(path, private=False, allow_empty=False, allow_system_hardlinks=False):
     if ".." in Path(path).parts:
         raise ValueError("Input path must not contain traversal")
     path = Path(os.path.abspath(path))
@@ -67,8 +67,13 @@ def read_regular(path, private=False, allow_empty=False):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or not (0 if allow_empty else 1) <= info.st_size <= MAX_INPUT:
+        # The read-only macOS System snapshot can hardlink native binaries;
+        # private packages and other inputs must still have exactly one link.
+        links_valid = info.st_nlink == 1 or (allow_system_hardlinks and not private and info.st_nlink > 1)
+        if not stat.S_ISREG(info.st_mode) or not links_valid or not (0 if allow_empty else 1) <= info.st_size <= MAX_INPUT:
             raise ValueError("Input must be a bounded single-link regular file")
+        if allow_system_hardlinks and (private or info.st_uid != 0 or not (os.fstatvfs(fd).f_flag & os.ST_RDONLY)):
+            raise ValueError("Hardlinked System input must be root-owned on a read-only filesystem and not a private package")
         if private and (info.st_mode & 0o077 or info.st_uid != os.geteuid()):
             raise ValueError("Package input is not private and owned by this process's user")
         with os.fdopen(os.dup(fd), "rb") as stream:
@@ -183,7 +188,7 @@ def system_source(root):
     version = read_regular(root / "System/Library/CoreServices/SystemVersion.plist")
     if plistlib.loads(version).get("ProductBuildVersion") != BUILD:
         raise ValueError("Retained System build is not 26C5035r")
-    daemon = read_regular(root / "usr/sbin/appleh16camerad")
+    daemon = read_regular(root / "usr/sbin/appleh16camerad", allow_system_hardlinks=True)
     return daemon, version
 
 
@@ -226,7 +231,7 @@ def capture_macos(output, unit_sha256):
     version = read_regular(Path("/System/Library/CoreServices/SystemVersion.plist"))
     if plistlib.loads(version).get("ProductBuildVersion") != BUILD:
         raise ValueError("Paired System build changed during acquisition")
-    daemon = read_regular(Path("/usr/sbin/appleh16camerad"))
+    daemon = read_regular(Path("/usr/sbin/appleh16camerad"), allow_system_hardlinks=True)
     blob, offsets = extract_setfile(daemon)
     files.update({"source/SystemVersion.plist": version, "source/appleh16camerad": daemon, FIRMWARE: blob})
     report = {**identity, "kind": "paired-macos-read-only-camera-acquisition", **MACOS_UNQUALIFIED,

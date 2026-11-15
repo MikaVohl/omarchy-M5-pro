@@ -17,8 +17,8 @@ This is a source release of a working bring-up, not a supported installer or a d
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
-| Battery / sensors | Battery/cpufreq/WFI telemetry; native illuminance calibration requires 193 bytes | Same-unit HmCA is 9,962 bytes, not directly usable illuminance calibration; ALS operation and TTPD semantics unqualified |
-| Audio | Same-unit AID41 blob compiled; six-amp/twelve-sense silent wiring and fail-closed interlock checks passed | Native 26C5035r DSP parity missing; normal speaker playback remains disabled |
+| Battery / sensors | Battery/cpufreq/WFI telemetry; genuine same-unit 193-byte ALS CalibrationData captured in paired macOS | Calibration not installed or activated; ALS lux operation and TTPD semantics unqualified; HmCA remains separate |
+| Audio | Same-unit AID41 blob compiled; silent wiring/interlock checked; native 26C5035r full-volume voicing comparison passed | Controller state, volume sweeps, graph timing and new-kernel safety checks unqualified; normal speaker playback remains disabled |
 | Suspend/resume | Not qualified | Do not infer safety from a working desktop |
 | External displays | Not qualified | Internal panel success does not qualify external DCP paths |
 | Camera | Exact-build 28,672-byte tuning candidate prepared; current ISP handoff inspected | Not installed; sensor identity, firmware ABI, privacy and capture unqualified |
@@ -589,4 +589,47 @@ The owner chose paired-macOS offline captures after this Linux checkpoint.
 Private transfer inputs are encrypted locally; neither the transfer key nor
 firmware/calibration/reference data belongs in GitHub. Speaker playback,
 headset microphone, encoders/ANE, camera and ALS are not marked finished.
+
+## Paired-macOS acquisition — 2026-11-15
+
+Authenticated acquisition verified Mac17,8, build 26C5035r and the independently
+retained Linux unit identity. After repairing the portable tuning-root path,
+the native offline AudioUnit host rendered all 1,159,200 frames in six AID41
+lanes. The externally anchored result passed completeness, finite-output and
+native-not-modelled admission. No audio device was opened. This reference alone
+does not establish Linux DSP/controller parity or authorize playback.
+
+Offline comparison then executed the original hash-bound ARM64 compiler and a
+matching-source ARM64 voicing renderer under QEMU with digest-pinned GNU runtime
+libraries. All 182 measured cells passed the existing +0.25/-1.0 dB gate;
+worst measured deltas were +0.184/-0.048 dB. This qualifies only full-volume
+voicing against this native reference, not controller state, volume sweeps,
+graph timing, acoustic quality, sense/interlock behavior on the new kernel or
+protected playback. Internal speakers remain disabled.
+
+Read-only ALS IORegistry acquisition recovered exactly one genuine 193-byte
+illuminance CalibrationData blob. Separate factory HmCA was preserved without
+conversion. The private capture removes the missing-calibration input blocker;
+Linux package preparation, installation, acquisition and measured lux behavior
+remain unperformed.
+
+Camera acquisition initially rejected the native daemon's two hardlinks on the
+read-only System snapshot. Its explicit root-owned/read-only System source read
+now admits them; private-package hardlinks remain refused. Repaired acquisition
+retained the exact 28,672-byte tuning candidate, ISP/DART and privacy-related
+registry observations. Sensor identity, AP/exclave ownership/quiescence, memory
+handoff, firmware ABI, visible privacy operation and actual capture remain
+unqualified. No camera session or firmware installation occurred.
+
+Media acquisition retained ProRes 627, APR/DART and AVE service metadata.
+Both exact `ane` name queries returned no roots; that is not hardware-absence
+proof. Registry capabilities and kext versions do not qualify native first DMA,
+firmware ABI, reset/quiescence or Linux encoder/ANE startup.
+
+Every capture and the initial failures were preserved privately on the Mac and
+the acquisition workstation, with externally retained manifest hashes and
+transferred source hashes verified. Raw reference audio, unit identity,
+calibration, tuning and registry evidence are not published. No reboot, Linux
+hardware qualification, nonzero speaker playback, headset voice test, camera
+session, encoder/ANE job or ALS activation was performed in this acquisition.
 
