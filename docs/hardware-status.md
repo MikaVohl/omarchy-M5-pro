@@ -13,7 +13,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Panel | Native DCP, full-notch 3456×2234 at 120 Hz | Hyprland configuration verified; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
-| Bluetooth | Ordinary `touchid-sco` boot observed; earlier A2DP/controls worked | Headset page-timeout occurred before HFP/SCO testing; microphone still unqualified; private HDR-SCO unsupported |
+| Bluetooth | AirPods connected; HFP attempt reached controller setup on `touchid-sco-spk` | Enhanced synchronous setup rejected twice with status 0x11; SCO TX/RX stayed zero and recording timed out; isolated legacy-setup candidate building |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
 | Video decode / Moonlight | 48 H.264 frames matched software; real 1080p/60 hardware H.264 Desktop stream reported good | Four-minute smoke, not a long soak; HEVC pixel correctness, AV1, VP9 and higher resolutions unqualified |
 | Video encode / ANE | Native ProRes APRI prepared and DMA quarantine candidate built; AVE command sizes and ANE preload geometry differ from the pin | No encoder/ANE startup; native quiescence/descriptor/boot contracts unresolved; acquisition guards remain |
@@ -742,4 +742,38 @@ full-scale/volume-sweep, acoustic/lifetime, suspend or repeated-boot safety.
 
 AirPods connected during the speaker checks. The owner deferred microphone
 qualification; no HFP profile switch or microphone recording ran.
+
+## AirPods synchronous setup investigation - 2026-11-15
+
+The owner requested microphone qualification after the speaker pass. AirPods
+connected successfully. The audio card exposed CVSD, mSBC and LC3 voice
+profiles; an mSBC profile request created a transient Bluetooth input, but the
+card remained on A2DP. A bounded recording targeted only that Bluetooth input
+and timed out after 18 seconds. WirePlumber reported transport/node errors.
+No microphone success or intelligible recording is claimed.
+
+The independently running 60-second privacy-filtered HCI collector captured
+ten control records. Both Enhanced Setup Synchronous Connection commands
+(`0x043d`) received Command Status `0x11` (Unsupported Feature or Parameter
+Value). No synchronous-completion event or SCO header was captured; actual
+controller `sco_tx` and `sco_rx` stayed zero. These replies precede SCO ring
+traffic, so they do not demonstrate a DMA framing/credit failure or successful
+mSBC negotiation. Filtered records and controller snapshots remain private;
+ACL/key/vendor traffic and audio payloads were excluded before userspace.
+
+Normal A2DP profile and pre-test default sink/source were restored; protected
+speaker output remained granted. No raw recording file was created and
+temporary recording buffers were cleared. The AirPods control daemon also
+reported capture-query/card lookup failures; those are distinct observations,
+not a proven explanation for the controller's status reply.
+
+The owner authorized an isolated `touchid-sco-spk-hfp` candidate. It retains
+the current pinned speaker/Touch ID/SCO patch set and adds only the upstream
+`HCI_QUIRK_BROKEN_ENHANCED_SETUP_SYNC_CONN` in the T6050 controller's probe.
+The core then selects ordinary Setup Synchronous Connection (`0x0428`) with
+existing codec, status and credit handling. There is no supported runtime
+toggle, command translation, fake completion or admission relaxation. The
+candidate applies without fuzz; 51 authorization cases and the production
+capability predicate's four host cases passed. Full kernel build is running;
+legacy setup and microphone output still need a manual boot and hardware test.
 

@@ -521,3 +521,21 @@ camera job is claimed.
   suspend, volume-sweep and lifetime certification are not claimed. AirPods
   connected but HFP/microphone testing was deferred by the owner.
 
+## AirPods HFP setup evidence - 2026-11-15
+
+- Successful AirPods connection, advertised voice profiles and transient
+  Bluetooth input observed. The mSBC profile request did not establish a
+  working voice link; the Bluetooth-only recorder timed out after 18 seconds.
+- A 60-second private filtered capture completed without collector errors:
+  ten control records, two enhanced setup commands rejected with status 0x11,
+  no SCO headers and controller SCO TX/RX counters unchanged at zero.
+- A2DP profile and pre-test default routes restored; speaker protection
+  remained granted. No raw recording file created; temporary buffers cleared.
+- Isolated upstream-quirk patch applies without fuzz. All 51 candidate
+  authorization cases passed, including predecessor-build refusal. Shell
+  syntax passed; the production enhanced capability macro passed four host
+  capability/quirk cases under ASan/UBSan. A first host command found no clang;
+  the available cc compiler executed the proof successfully.
+- Full candidate kernel build started. No legacy-command or microphone
+  hardware qualification is inferred from the host checks.
+

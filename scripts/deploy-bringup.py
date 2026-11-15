@@ -5,6 +5,9 @@ bringup is the Bluetooth kernel. touchid is bringup plus the J716s sensor wiring
 and Touch ID SEP profile; its DTB delta is checked exactly before deployment.
 touchid-sco adds native SCO transport and fail-closed ProRes DMA ownership;
 it does not authorize ProRes first DMA or enable speakers.
+touchid-sco-spk retains protected speaker operation; touchid-sco-spk-hfp adds
+the controller-scoped upstream legacy synchronous-setup quirk. Each new
+kernel still needs its own hardware qualification.
 
 Never reboot, arm a trial, replace a running kernel's modules, or alter baseline
 root/rescue dependencies. Deployment is experimental, not physical qualification.
@@ -34,9 +37,10 @@ DEPLOYABLE = {"bringup": (stage.BASE, stage.RELEASE),
               "touchid": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE),
               "touchid-sco": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE),
               "touchid-sco-spk": (stage.BASE, stage.RELEASE, candidate.BRINGUP_RELEASE, candidate.TOUCHID_RELEASE,
-                                  candidate.VARIANTS["touchid-sco"]["release"])}
+                                  candidate.VARIANTS["touchid-sco"]["release"]),
+              "touchid-sco-spk-hfp": (candidate.VARIANTS["touchid-sco-spk"]["release"],)}
 # Defaults a rollback may restore besides the baseline payload.
-PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco")
+PREVIOUS_VARIANTS = ("open-wifi", "bringup", "touchid", "touchid-sco", "touchid-sco-spk")
 
 
 def select(variant):

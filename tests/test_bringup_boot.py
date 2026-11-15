@@ -182,6 +182,18 @@ class ProtectedSpeakerBootTests(TouchidScoBootTests):
             self.verify()
 
 
+class LegacyHfpSetupBootTests(ProtectedSpeakerBootTests):
+    """The voice setup variant cannot inherit authorization from its predecessor."""
+    VARIANT = "touchid-sco-spk-hfp"
+
+    def test_protected_speaker_build_cannot_claim_legacy_hfp_setup(self):
+        f = self.fixture
+        f.receipt["build_manifest"]["patches"] = copy.deepcopy(candidate.VARIANTS["touchid-sco-spk"]["patches"])
+        f.store_receipt()
+        with self.assertRaisesRegex(RuntimeError, "build pins"):
+            self.verify()
+
+
 class BringupPublicationTests(unittest.TestCase):
     def test_validation_failure_restores_previous_default_not_baseline(self):
         with tempfile.TemporaryDirectory() as temporary:

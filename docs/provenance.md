@@ -197,6 +197,20 @@ safe-floor enforcement remain. Neither host tests nor an unbooted build confer
 hardware qualification. The currently running old cap was observed to make the
 supervisor withdraw; it was not bypassed with a readback or kernel-memory edit.
 
+### Controller synchronous setup selection
+
+The isolated legacy HFP setup patch uses the pinned kernel's existing
+[enhanced-setup quirk](https://github.com/aurora-silicon/linux/blob/8ab10100a4c1c944797e3fc8345589aff57777df/include/net/bluetooth/hci.h)
+and
+[capability predicate](https://github.com/aurora-silicon/linux/blob/8ab10100a4c1c944797e3fc8345589aff57777df/include/net/bluetooth/hci_core.h).
+The ordinary
+[connection setup paths](https://github.com/aurora-silicon/linux/blob/8ab10100a4c1c944797e3fc8345589aff57777df/net/bluetooth/hci_conn.c)
+retain codec/packet/latency and command-status handling. Only the experimental
+T6050 Centauri controller probe sets the quirk; other Bluetooth drivers and
+global HCI behavior are unchanged. Actual same-unit controller replies rejected
+enhanced setup with status 0x11. That is evidence for trying the existing legacy
+path, not proof that the controller implements it or that microphone audio works.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

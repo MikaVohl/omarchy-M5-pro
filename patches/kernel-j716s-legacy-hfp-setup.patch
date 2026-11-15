@@ -1,0 +1,27 @@
+Subject: Bluetooth: btcentauri_t6050: use standard synchronous setup
+
+On J716s / 26C5035r, the actual controller rejected both Enhanced Setup
+Synchronous Connection (0x043d) attempts with Command Status 0x11 before
+any synchronous-completion event or SCO TX/RX. The privacy-filtered HCI
+capture retained no audio payload or peer addresses.
+
+Use the existing upstream quirk for this T6050 Centauri controller only.
+The HCI core then chooses HCI_OP_SETUP_SYNC_CONN, retaining its normal
+CVSD/mSBC parameter selection, status handling and credit accounting.
+This does not translate commands, fake successful replies, force a codec,
+relax SCO descriptor admission or authorize a controller reset. Legacy
+setup and actual microphone audio still require hardware qualification.
+
+--- a/drivers/bluetooth/btcentauri_t6050.c
++++ b/drivers/bluetooth/btcentauri_t6050.c
+@@ -1069,6 +1069,10 @@
+ 	hdev->post_init = cen_hci_post_init;
+ 	hdev->reset_dup_filter = cen_hci_reset_dup_filter;
+ 
++	/* 26C5035r rejects enhanced SCO setup with status 0x11. Use the
++	 * standard setup path; keep codec, status and credit handling in HCI.
++	 */
++	hci_set_quirk(hdev, HCI_QUIRK_BROKEN_ENHANCED_SETUP_SYNC_CONN);
+ 	hci_set_quirk(hdev, HCI_QUIRK_FIXUP_LE_EXT_ADV_REPORT_PHY);
+ 	SET_HCIDEV_DEV(hdev, &pdev->dev);
+ 	hci_set_drvdata(hdev, bt);

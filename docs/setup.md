@@ -875,6 +875,27 @@ granted. Persistent startup uses the system supervisor, seat path and sleep
 hook plus the seat-user graph/session units; enabling the sleep hook does not
 qualify suspend/resume. Keep preview and repeated-boot limits explicit.
 
+## AirPods legacy synchronous setup candidate
+
+If actual controller evidence rejects Enhanced Setup Synchronous Connection
+with status `0x11`, do not count profile availability as microphone support.
+The isolated `touchid-sco-spk-hfp` variant adds the standard upstream broken
+enhanced-setup quirk only to the T6050 controller; ordinary HCI codec/credit
+and failure handling remain. Legacy setup is an experiment, not a proven fix.
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-touchid-sco-spk-hfp
+sudo python3 -B scripts/deploy-bringup.py --variant touchid-sco-spk-hfp
+```
+
+Deployment is permitted only from the current protected speaker kernel,
+preserves that default/runtime for rollback and never replaces its modules.
+Selection requires explicit owner authorization and the tool's unbooted-risk
+acknowledgement. After a manual restart, requalify the speaker graph for the
+new kernel before normal playback, then require successful synchronous-link
+setup and a real Bluetooth-only microphone recording. Restore the prior
+profile/default routes and delete private recording buffers afterward.
+
 ## Source maintenance and checks
 
 ```sh
