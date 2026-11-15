@@ -1,4 +1,5 @@
 """Offline SCO protocol/privacy guards; no Bluetooth connection or microphone use."""
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -6,6 +7,7 @@ from pathlib import Path
 import socket
 import stat
 import struct
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -49,6 +51,15 @@ def filtered(program, packet):
     raise AssertionError("filter did not return")
 
 
+def linux_bluetooth_constants():
+    """Provide Linux's AF_BLUETOOTH/BTPROTO_HCI values where the host Python lacks them."""
+    stack = contextlib.ExitStack()
+    for name, value in (("AF_BLUETOOTH", 31), ("BTPROTO_HCI", 1)):
+        if not hasattr(sco.socket, name):
+            stack.enter_context(patch.object(sco.socket, name, value, create=True))
+    return stack
+
+
 class PrivacyFilterTests(unittest.TestCase):
     def test_sco_audio_is_truncated_for_each_controller_and_direction(self):
         for index in (0, 513, 65534):
@@ -86,6 +97,7 @@ class PrivacyFilterTests(unittest.TestCase):
         for packet in (b"", b"\x02", b"\x02\x00\x00", monitor(2, b""), monitor(3, b"")):
             self.assertEqual(filtered(program, packet), b"")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "needs the Linux socket filter API")
     def test_real_linux_socket_filter_truncates_and_drops_synthetic_packets(self):
         # AF_UNIX datagrams exercise the actual kernel BPF verifier/filter path,
         # not HCI, radio traffic or audio hardware; no elevated privilege needed.
@@ -109,7 +121,8 @@ class PrivacyFilterTests(unittest.TestCase):
 
     def test_privacy_filter_failure_refuses_before_monitor_bind(self):
         monitor_socket = MagicMock()
-        with patch.object(sco.socket, "socket", return_value=monitor_socket), \
+        with linux_bluetooth_constants(), \
+             patch.object(sco.socket, "socket", return_value=monitor_socket), \
              patch.object(sco, "attach_filter", side_effect=OSError("filter refused")):
             with self.assertRaises(OSError):
                 sco.open_monitor(0)
@@ -120,7 +133,8 @@ class PrivacyFilterTests(unittest.TestCase):
         monitor_socket = MagicMock()
         order = []
         monitor_socket.bind.side_effect = lambda address: order.append(("bind", address))
-        with patch.object(sco.socket, "socket", return_value=monitor_socket), \
+        with linux_bluetooth_constants(), \
+             patch.object(sco.socket, "socket", return_value=monitor_socket), \
              patch.object(sco, "attach_filter", side_effect=lambda sock, index: order.append(("filter", index))):
             self.assertIs(sco.open_monitor(513), monitor_socket)
         self.assertEqual(order, [("filter", 513), ("bind", (0xffff, 2))])

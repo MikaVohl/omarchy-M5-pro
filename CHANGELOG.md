@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Portable source checks — 2026-11-15
+
+- Run `make check` with a physical `TMPDIR`, so macOS's `/var` → `/private/var` symlink no longer trips the no-symlink and ownership-fixture guards under test (86 spurious macOS failures).
+- Skip, rather than error on, camera/sensor fixtures that need `work/sources/kernel` until `prepare-sources.py --fetch` has run; a fresh clone's `make check` now passes.
+- Run the Bluetooth monitor-ordering tests on non-Linux hosts with Linux's socket constants; skip only the real Linux socket-filter test elsewhere.
+- Add a GitHub Actions workflow running `make check` on Linux ARM64 and macOS.
+
 ## Speaker-priority native bringup — 2026-11-14
 
 - Recognize the exact T6050 speaker transport and observe six-amp/twelve-sense silent hardware wiring, lease-expiry and owner-death containment; keep audible playback guarded pending native DSP/controller parity.

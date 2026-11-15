@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("camera_preparation", ROOT / "scripts/prepare-camera-firmware.py")
 camera = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(camera)
+KERNEL_SOURCE = ROOT / "work/sources/kernel"
+NEEDS_KERNEL_SOURCE = unittest.skipUnless(
+    (KERNEL_SOURCE / "tools/aurora-sep/aurora-adt-extract.py").is_file(),
+    "needs prepared sources: python3 -B scripts/prepare-sources.py --fetch")
 
 
 def node(name, properties=(), children=()):
@@ -46,6 +50,7 @@ def daemon_fixture():
     return daemon, bytes(blob), [0x1000, 0x9000]
 
 
+@NEEDS_KERNEL_SOURCE
 class HandoffTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -106,6 +111,7 @@ class SetfileTests(unittest.TestCase):
 
 
 class PackageTests(unittest.TestCase):
+    @NEEDS_KERNEL_SOURCE
     def test_anchor_source_evidence_boot_and_private_permissions(self):
         daemon, blob, offsets = daemon_fixture()
         raw = adt()

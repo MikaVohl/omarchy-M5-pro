@@ -16,6 +16,8 @@ PROJECT = Path(__file__).absolute().parents[1]
 SPEC = importlib.util.spec_from_file_location("sensor_firmware", PROJECT / "scripts/prepare-sensor-firmware.py")
 sensor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sensor)
+if not (PROJECT / "work/sources/kernel/tools/aurora-sep/tests/test_touchid_setup.py").is_file():
+    raise unittest.SkipTest("needs prepared sources: python3 -B scripts/prepare-sources.py --fetch")
 FACTORY, EXTRACTOR = sensor.pinned_tools(PROJECT / "work/sources/kernel")
 
 # Reuse the pinned reader's deterministic APFS builder, not another parser or
