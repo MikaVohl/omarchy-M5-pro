@@ -1,5 +1,12 @@
 # Changelog
 
+## Touch ID kernel and Omarchy integration — 2026-11-14
+
+- Add `kernel-j716s-touchid.patch`: J716s Touch ID profile (J714s protocol, `0x1c000` capacity), refusing trusted keys, the FileVault API and an unguarded xART.
+- Add the persistent `touchid` variant (bringup config, build-bound sensor DTB) and `deploy-bringup.py --variant touchid` with an exact DT-delta check and rollback.
+- Add the omarchy-mac overlay (J716s eligibility, multi-name `firmware-name`, driver policy, pacman re-apply hook) so Omarchy's own fingerprint setup drives enrollment.
+- Let the boot guard accept the running default while a newer authorized default awaits reboot.
+
 ## Sensor-authentication SEP candidate — 2026-11-14
 
 - Add an isolated `sep-sensor` kernel variant with one bounded, opt-in, non-enrolling sensor identity/authentication probe; the build guest runs the actual Rust admission fixture.

@@ -137,6 +137,16 @@ the original baseline closure. Retained macOS/Startup Options remain necessary
 when Linux cannot execute either rollback. Do not repartition or alter Apple
 security policy to switch these payloads.
 
+The Touch ID kernel uses the same tool:
+
+```sh
+sudo python3 -B scripts/deploy-bringup.py --variant touchid --rollback
+```
+
+It restores the bringup default preserved in `/var/lib/j716s/touchid-backups/`.
+`omarchy-remove-security-fingerprint` turns Touch ID off (fingerprints, PAM,
+driver loading); the Linux key store in the enclave stays.
+
 AVD firmware installation is independent of kernel selection. Its rollback
 command removes only the exact file and receipt installed by that tool:
 

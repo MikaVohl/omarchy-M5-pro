@@ -537,6 +537,42 @@ remains forbidden.
 The ESP is 476 MB; staging refuses without about 32 MB free and never deletes files.
 Move unreferenced archives off the ESP first.
 
+## Touch ID kernel and Omarchy integration
+
+Touch ID follows the M2/M3 path: Omarchy's fingerprint setup asks the owner,
+omarchy-mac turns on enclave writes and keybag provisioning, fprintd opens
+`/dev/sep-bio`, and the driver uploads the sensor patch and calibration,
+enrolls and matches. The `touchid` kernel is the bringup kernel (same config)
+plus the SEP probe, sensor wiring and `kernel-j716s-touchid.patch`. The patch
+gives J716s the J714s Touch ID profile with the measured `0x1c000`
+registration capacity, used whenever `keystore_only` is not 1. The driver
+refuses to load unless `trusted_keys=0`, `filevault_api=0` and the xART guard is on.
+
+```sh
+JOBS=6 bash scripts/build-touchid-probe.sh --build-touchid
+sudo python3 -B scripts/deploy-bringup.py --variant touchid \
+  --baseline-config outputs/kernel-open-wifi-candidate/.config
+sudo python3 -B scripts/deploy-bringup.py --variant touchid --activate --acknowledge-unbooted-risk \
+  --baseline-config outputs/kernel-open-wifi-candidate/.config
+sudo scripts/j716s-touchid-overlay.sh install
+```
+
+Deployment requires the exact sensor-trial DT delta and preserves the previous
+default for rollback. The overlay admits J716s in omarchy-mac's Touch ID
+eligibility (which otherwise reports `unsupported:board`), reads the calibration
+as the first `firmware-name`, and requires the prepared `mesacal-j716s.bin` and
+`msrk-j716s.bin`. It also writes `/etc/modprobe.d/j716s-touchid.conf`
+(`trusted_keys=0 filevault_api=0 xart_guard=1`), and a pacman hook re-applies it
+after omarchy-mac updates; if it no longer applies, Touch ID reports unsupported.
+`j716s-touchid-overlay.sh remove` restores omarchy-mac's files.
+
+With that options file present, the one-shot SEP discovery/sensor trials cannot
+load the driver (their command-line parameters would be duplicated); remove the
+overlay before repeating them.
+
+After rebooting into the `touchid` kernel, run `omarchy-setup-security-fingerprint`.
+It explains the shared-enclave risk and asks before turning Touch ID on.
+
 ## Source maintenance and checks
 
 ```sh
