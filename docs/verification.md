@@ -661,3 +661,14 @@ camera job is claimed.
   staged extraction. The corrected cross-build job was launched; no hardware
   operation or deployment occurred.
 
+- Corrected eg18 build/transfer/local finalization completed in 402.7 seconds,
+  64 jobs with prepared toolchain. Eight returned artifacts passed source,
+  target architecture, signature, hash, config and target-DT validation.
+- Target preflight initially refused 11 MiB ESP free space without mutation.
+  Spent SEP trial payloads were archived with receipt copies and hash readback;
+  active observation/full kernels, modules, baseline/rescue and factory inputs
+  stayed intact. Installed guard passed before/after; free space reached 72 MiB.
+- Target preflight and owner-authorized guarded acquisition selection passed;
+  observation/media rollback preserved, no reboot or hardware ANE job. Runtime
+  startup/output qualification remains pending the manual hardware return.
+

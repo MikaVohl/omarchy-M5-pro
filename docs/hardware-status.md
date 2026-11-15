@@ -6,7 +6,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | --- | --- | --- |
 | Board | Mac17,8 / J716s / T6050 M5 Pro | Not J714s, K114c, M5 Max, or a generic Apple Silicon recipe |
 | Firmware | macOS 27.3 beta 1, build 26C5035r; mBoot-20457.60.65.0.1 | Exact running macOS, system firmware, and stub pairing required |
-| Kernel | `bringup-ane-observe` booted; boot binding passed | Guarded acquisition candidate preparing through native x86-64 to ARM64 cross-build; no acquisition yet |
+| Kernel | `bringup-ane-observe` remains running; boot binding passed | Native cross-built `bringup-ane-start` passed local/target checks and was selected for later manual boot; acquisition untested |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Native G17S vertex/fragment work and native Vulkan/zink session; one scheduling-timeout recovery observed | No complete compute/API conformance or clean stability claim |
@@ -984,4 +984,31 @@ are validated before final metadata. Raw Image can be reconstructed from its
 validated gzip and checked against the original hash. Three worker, 33 finalizer,
 four return-envelope and 92 acquisition-policy cases passed. No remote hardware
 device, Mac firmware/ADT/capture, boot selection or ANE job was involved.
+
+### Successful cross-build and guarded acquisition selection
+
+The corrected native x86-64 ARM64 build returned all eight artifacts and
+passed local finalization. Total build, transfer and local finalization time
+was 402.7 seconds (6.7 minutes), using 64 jobs and a previously prepared
+compiler image; this is not a fully cold-build or isolated compile-time
+measurement. Full debug modules remain in the 482 MiB archive. The 19 MiB
+compressed Image was returned and the 52 MiB raw Image reconstructed and
+hash-verified locally. No byte-different kernel config was accepted.
+
+Target preflight initially stopped for insufficient ESP space (11 MiB).
+The two spent, unselected SEP trial payload closures and copies of their
+receipts were archived privately with file/hash readback under the owner's
+ESP authorization. Active observation and tested full kernels/modules,
+baseline/rescue, factory material and the spent marker were unchanged.
+Installed boot validation passed before and after archival; free space rose
+to 72 MiB. The original trial receipts remain, and payloads are restorable
+from the private archive rather than currently staged for a trial.
+
+Target preflight then passed exact DT/config/module/boot and ESP checks.
+The owner explicitly authorized selection of `bringup-ane-start`, which may
+attempt acquisition/startup only through the existing ordered, cold-state,
+identity/ownership and quarantine gates. Publication and installed guard
+validation passed; the observation default/runtime and tested media/rescue
+closures remain preserved. No reboot, ANE acquisition or inference job was
+issued. The next hardware return must establish startup and real output.
 

@@ -9,6 +9,8 @@
 - Launch a measured, 64-job EPYC cross-build with public inputs only; retain target data and deployment on the Mac.
 - Fix the cross userspace-link prerequisite with a real signed ARM64 sysroot and bound package/flag provenance, preserving byte-identical kernel config checks.
 - Separate public source-cache identity from build metadata and refuse legacy unowned caches; preserve completed toolchain setup for the corrected run.
+- Complete the 64-job native cross-build, transfer and local finalization in 402.7 seconds with prepared toolchain; validate returned ARM64 Image and signed modules without config drift.
+- Archive spent SEP trial payloads with verified restoration data to free ESP space, then select the owner-authorized guarded acquisition candidate with observation/media/rescue rollback preserved; no automatic reboot or ANE job.
 
 ## Hardware video encoding and HEVC decoding - 2026-11-15
 
