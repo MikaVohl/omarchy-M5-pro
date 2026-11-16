@@ -1,0 +1,190 @@
+Native GPUI minimum-limit and qualification patch.
+Target: gpui-pre-wgpu 0.3.6, archive SHA256
+05515b32799b1767d69300921c1b562cd53104965211a0e8905acdc7aa18e693.
+Upstream: Zed GPUI snapshot bcf6582ce3500df93a8a39366640173e6786cea6.
+License: Apache-2.0; see LICENSES/Apache-2.0.txt.
+Modified files: Cargo.toml (unit-test prerequisites), src/wgpu_context.rs
+(audited native limit and adapter diagnostics), src/wgpu_renderer.rs
+(actual shader-interface regression). Adapter admission and caps unchanged.
+
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -115,6 +115,17 @@
+ [dependencies.wgpu]
+ version = "29.0.4"
+ 
++[dev-dependencies.gpui]
++version = "=0.3.6"
++default-features = false
++features = ["test-support"]
++package = "gpui-pre"
++
++[dev-dependencies.naga]
++version = "=29.0.4"
++features = ["wgsl-in"]
++default-features = false
++
+ [target.'cfg(target_family = "wasm")'.dependencies.web-sys]
+ version = "0.3"
+ features = ["HtmlCanvasElement"]
+--- a/src/wgpu_context.rs
++++ b/src/wgpu_context.rs
+@@ -5,6 +5,11 @@
+ use std::sync::Arc;
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use wgpu::TextureFormat;
++
++// QuadVarying uses locations 0 through 5. All other native interfaces fit below
++// that ceiling; builtin(position) does not consume an inter-stage variable.
++#[cfg(any(not(target_family = "wasm"), test))]
++pub(crate) const REQUIRED_INTER_STAGE_SHADER_VARIABLES: u32 = 6;
+ 
+ pub struct WgpuContext {
+     pub instance: wgpu::Instance,
+@@ -262,9 +267,12 @@
+                 .using_alignment(adapter.limits())
+         };
+         #[cfg(not(target_family = "wasm"))]
+-        let required_limits = wgpu::Limits::downlevel_defaults()
+-            .using_resolution(adapter.limits())
+-            .using_alignment(adapter.limits());
++        let required_limits = wgpu::Limits {
++            max_inter_stage_shader_variables: REQUIRED_INTER_STAGE_SHADER_VARIABLES,
++            ..wgpu::Limits::downlevel_defaults()
++        }
++        .using_resolution(adapter.limits())
++        .using_alignment(adapter.limits());
+ 
+         let (device, queue) = adapter
+             .request_device(&wgpu::DeviceDescriptor {
+@@ -432,6 +440,15 @@
+                         info.name,
+                         info.backend
+                     );
++                    eprintln!(
++                        "GPUI renderer: {} backend={:?} type={:?} vendor={:#x} device={:#x} inter_stage_variables={}",
++                        info.name,
++                        info.backend,
++                        info.device_type,
++                        info.vendor,
++                        info.device,
++                        device.limits().max_inter_stage_shader_variables,
++                    );
+                     return Ok((
+                         adapter,
+                         device,
+@@ -447,6 +464,7 @@
+                         info.backend,
+                         e
+                     );
++                    eprintln!("GPUI adapter rejected: {} ({:?}): {e}", info.name, info.backend);
+                 }
+             }
+         }
+--- a/src/wgpu_renderer.rs
++++ b/src/wgpu_renderer.rs
+@@ -2226,11 +2226,103 @@
+         );
+     }
+ 
+-    fn validate_wgsl(source: &str, capabilities: naga::valid::Capabilities) {
++    #[test]
++    fn native_shader_interfaces_fit_requested_limits() {
++        let requested = crate::wgpu_context::REQUIRED_INTER_STAGE_SHADER_VARIABLES;
++        let mut maximum = 0;
++        for (name, source, capabilities) in [
++            ("storage", STORAGE_BUFFER_SHADERS, naga::valid::Capabilities::empty()),
++            (
++                "subpixel",
++                SUBPIXEL_SHADERS,
++                naga::valid::Capabilities::DUAL_SOURCE_BLENDING,
++            ),
++        ] {
++            let module = validate_wgsl(source, capabilities);
++            for entry in &module.entry_points {
++                let (variables, locations) = match entry.stage {
++                    naga::ShaderStage::Vertex => {
++                        let result = entry.function.result.as_ref().expect("vertex output");
++                        interface_requirement(&module, result.ty, result.binding.as_ref(), false)
++                    }
++                    naga::ShaderStage::Fragment => entry.function.arguments.iter().fold(
++                        (0, 0),
++                        |(variables, locations), argument| {
++                            let (count, ceiling) = interface_requirement(
++                                &module,
++                                argument.ty,
++                                argument.binding.as_ref(),
++                                true,
++                            );
++                            (variables + count, locations.max(ceiling))
++                        },
++                    ),
++                    _ => panic!("unexpected native shader stage: {:?}", entry.stage),
++                };
++                // All native pipelines use triangle topologies, not PointList.
++                let required = variables.max(locations);
++                assert!(
++                    required <= requested,
++                    "{name}/{} requires {required} inter-stage variables, requested {requested}",
++                    entry.name,
++                );
++                maximum = maximum.max(required);
++            }
++        }
++        assert_eq!(maximum, requested, "request only the audited shader minimum");
++    }
++
++    fn interface_requirement(
++        module: &naga::Module,
++        ty: naga::Handle<naga::Type>,
++        binding: Option<&naga::Binding>,
++        fragment_input: bool,
++    ) -> (u32, u32) {
++        match binding {
++            Some(naga::Binding::Location { location, .. }) => (1, location + 1),
++            Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. })) => (0, 0),
++            Some(naga::Binding::BuiltIn(builtin)) if fragment_input => {
++                let deduction = match builtin {
++                    naga::BuiltIn::FrontFacing
++                    | naga::BuiltIn::SampleIndex
++                    | naga::BuiltIn::SampleMask
++                    | naga::BuiltIn::PrimitiveIndex
++                    | naga::BuiltIn::SubgroupInvocationId
++                    | naga::BuiltIn::SubgroupSize
++                    | naga::BuiltIn::ViewIndex
++                    | naga::BuiltIn::PointCoord => 1,
++                    naga::BuiltIn::Barycentric { .. } => 3,
++                    _ => panic!("unaudited fragment input builtin: {builtin:?}"),
++                };
++                (deduction, 0)
++            }
++            Some(naga::Binding::BuiltIn(builtin)) => {
++                panic!("unaudited vertex output builtin: {builtin:?}")
++            }
++            None => match &module.types[ty].inner {
++                naga::TypeInner::Struct { members, .. } => members.iter().fold(
++                    (0, 0),
++                    |(variables, locations), member| {
++                        let (count, ceiling) = interface_requirement(
++                            module,
++                            member.ty,
++                            member.binding.as_ref(),
++                            fragment_input,
++                        );
++                        (variables + count, locations.max(ceiling))
++                    },
++                ),
++                _ => panic!("unbound shader interface type"),
++            },
++        }
++    }
++
++    fn validate_wgsl(source: &str, capabilities: naga::valid::Capabilities) -> naga::Module {
+         let module = naga::front::wgsl::parse_str(source).expect("shader should parse");
+         naga::valid::Validator::new(naga::valid::ValidationFlags::all(), capabilities)
+             .validate(&module)
+             .expect("shader should validate");
++        module
+     }
+ 
+     #[test]

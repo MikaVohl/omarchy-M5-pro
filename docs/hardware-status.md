@@ -9,7 +9,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Kernel | `bringup-ane-start` booted; installed boot binding passed | Remote-built acquisition candidate is live; single-job ANE qualification, not sustained stability |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
-| GPU | Native G17S rendering and Vulkan/zink desktop; one scheduling-timeout recovery observed; GPUI applications render with app-scoped llvmpipe | Borealis conformance 0.0.0.0 is hidden by wgpu; native GL GUI limits, API conformance and sustained stability remain open |
+| GPU | Native G17S/Vulkan/zink desktop; isolated patched DiskTree produced hardware-rendered Wayland pixels | Limited four-file GUI proof; prior scheduling-timeout recovery, API conformance, other native GPUI apps and sustained stability remain open |
 | Panel | Native DCP, full-notch 3456×2234; current observation boot at 60 Hz, 120 Hz offered | No display setting changed during observation; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
@@ -36,6 +36,44 @@ subsequent normal-default boot has yet been observed.
 See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 
 Obtain and verify a current backup before partitioning or deployment.
+
+## Isolated native GPUI/zink rendering - 2026-11-15
+
+An isolated DiskTree 0.11.0 build now renders on the actual M5 Pro GPU. It uses
+the exact GPUI-pre-wgpu 0.3.6 source with an audited six-variable inter-stage
+request instead of the generic fifteen-variable default. The regression parses
+and validates both native shader compositions and checks variable count,
+location ceiling and builtin deductions across all native interfaces. It passed.
+Adapter-reported limits, features, backends and Vulkan conformance admission
+remain unchanged; this is native OpenGL through zink, not direct wgpu Vulkan.
+
+The same compiled executable ran against one private four-file treemap fixture
+using llvmpipe and then native zink. Both were native Wayland windows with the
+same geometry; actual captures were inspected and compared.
+
+| Check | Observed result |
+| --- | --- |
+| Native adapter | `zink Vulkan 1.4(Apple M5 Pro (G17S B1) (AURORA_BOREALIS))`, `IntegratedGpu`, GL backend |
+| Reference adapter | `llvmpipe (LLVM 23.1.4, 128 bits)`, CPU, GL backend |
+| Requested inter-stage variables | 6 on both runs |
+| Captured frame dimensions | 1238x2122 on both runs |
+| Full-frame native/reference PSNR | 63.2192 dB |
+| Full-frame normalized RMSE | 0.0006903 |
+| Native kernel journal window | No entries during the bounded probe |
+
+Treemap geometry, labels, colours, cache hatching and controls appeared correct.
+The frames are not bit-identical. This qualifies a limited native GUI rendering
+path, not all UI interactions, every pipeline's draw-time behavior, resizing,
+concurrency, endurance or complete graphics API conformance.
+
+The tested executable SHA256 is
+`ce44c7449bcefc11f3bb030b0872c69d07db3f2a317a49c02d272a5e4b23fc3b`.
+The reusable source change is
+[`gpui-pre-wgpu-native-minimum-limits.patch`](../patches/gpui-pre-wgpu-native-minimum-limits.patch);
+its exact inputs and build requirements are recorded in [provenance](provenance.md#native-gpui-minimum-limit-candidate).
+Installed DiskTree/Herdr/Superwhisper software launchers, global graphics,
+kernel/boot selection and dictation were not changed. Herdr and Superwhisper
+native rendering still require matching source integration and their own proof.
 
 ## Desktop application rendering qualification - 2026-11-15
 

@@ -246,6 +246,45 @@ and observation-only startup remains required. Per-boot unit digests/receipts
 stay private. Consumer checks cover missing, wrong and unreadable metadata
 before TEXT access and preserve the existing reservation/pin/cold-state gates.
 
+### Native GPUI minimum-limit candidate
+
+DiskTree uses MIT-licensed release 0.11.0 at
+[`6c8d4ce6211bf135ff4e42890faebff1040e1846`](https://github.com/tobi/disktree/tree/6c8d4ce6211bf135ff4e42890faebff1040e1846).
+The patched renderer is Apache-2.0 `gpui-pre-wgpu` 0.3.6, archive SHA256
+`05515b32799b1767d69300921c1b562cd53104965211a0e8905acdc7aa18e693`,
+metadata-bound to Zed revision `bcf6582ce3500df93a8a39366640173e6786cea6`.
+The patch contains the minimum-limit fix, startup adapter diagnostics and a
+regression parsing actual native shader interfaces; its license copy is retained
+in `LICENSES/Apache-2.0.txt`. Naga 29.0.4 is a test-only direct dependency.
+
+The isolated build root adds the renderer to workspace members and overrides
+`gpui-pre-wgpu` through `[patch.crates-io]` using the patched extracted crate.
+Its unit-test prerequisites include GPUI-pre 0.3.6 `test-support` and Naga
+`wgsl-in`. Existing locked package versions, sources and checksums were retained.
+The published renderer omits monorepo test assets: acquire the actual Lilex
+Regular/Bold and IBM Plex Sans Regular fonts and their license files from the
+exact [Zed font tree](https://github.com/zed-industries/zed/tree/bcf6582ce3500df93a8a39366640173e6786cea6/assets/fonts)
+into the build root's `assets/fonts/`, not dummy files. Verified font Git blobs:
+`cb98a69b0ffb1976805bf5af3047307fe2422b1d`,
+`45930ee30b81a78e964c3ff494e05ea45147ed9b`,
+`bd6817d5202895da5ac4fad88de3da71e652881a`. Fonts are not redistributed here.
+
+Native Rust 1.97.0 archive
+`rust-1.97.0-aarch64-unknown-linux-gnu.tar.xz` was verified against SHA256
+`4c88fe30a748a8853c19f4e8876a64b32005bc4cbcde48e93732d06a430e808a`.
+Its compiler commit is `2d8144b7880597b6e6d3dfd63a9a9efae3f533d3`, LLVM 22.1.6.
+The actual narrow test and build commands in that isolated workspace were:
+
+```sh
+cargo test --locked -p gpui-pre-wgpu --lib \
+  wgpu_renderer::tests::native_shader_interfaces_fit_requested_limits -- --exact
+cargo build --locked -p disktree-app --bin disktree
+```
+
+Qualification used native zink and an llvmpipe reference without changing
+installed launchers. Build artifacts and captured frames remain private;
+new builds must establish their own adapter identity and rendered correctness.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

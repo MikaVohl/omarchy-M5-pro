@@ -714,3 +714,29 @@ camera job is claimed.
   zink/private Vulkan selection remained intact. Only owned diagnostic GUIs
   were closed. The workaround is CPU GL, not general native GPU qualification.
 
+## Isolated native GPUI minimum-limit qualification - 2026-11-15
+
+- Acquired DiskTree 0.11.0 at immutable commit
+  `6c8d4ce6211bf135ff4e42890faebff1040e1846` and verified the locked GPUI-pre-wgpu
+  0.3.6 archive SHA256. Installed checksum-verified native Rust/Cargo 1.97.0 in
+  a private prefix; no host toolchain/package or installed app was replaced.
+- Cargo prerequisite failures occurred before test execution: local renderer
+  workspace membership, missing published-crate font fixtures and test-support
+  exports. Added the real prerequisites, including font/license Git-blob checks
+  against the exact Zed revision. Dependency versions/sources/checksums stayed
+  unchanged. No tests were deleted, disabled or replaced by dummy fixtures.
+- The exact `native_shader_interfaces_fit_requested_limits` regression passed:
+  one test, zero failures. The isolated native ARM64 DiskTree executable built
+  with locked dependencies; SHA256
+  `ce44c7449bcefc11f3bb030b0872c69d07db3f2a317a49c02d272a5e4b23fc3b`.
+- Actual llvmpipe-reference and native-zink runs used the same executable and
+  private four-file input. Native telemetry identified M5 Pro G17S Borealis,
+  IntegratedGpu, GL backend, six requested inter-stage variables. Both captured
+  native Wayland windows were 1238x2122 and visually inspected.
+- Whole-frame comparison: PSNR 63.2192 dB, normalized RMSE 0.0006903; not
+  bit-identical. Native treemap, text, controls and hatching rendered correctly;
+  the native kernel journal window had no entries. Both owned GUIs were closed.
+- Preserved installed software launchers, global Mesa selection, kernel/boot
+  and active user services. Native Vulkan admission was not relaxed. This is
+  limited DiskTree hardware rendering, not other apps or sustained stability.
+

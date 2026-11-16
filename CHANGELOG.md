@@ -1,6 +1,13 @@
 # Changelog
 
 
+## Native GPUI hardware rendering candidate - 2026-11-15
+
+- Audit all native GPUI shader interfaces and request their actual six-variable minimum without changing driver capabilities or Vulkan admission.
+- Pass the parsed-shader regression with genuine pinned upstream test fonts and test-support prerequisites; preserve dependency identities.
+- Build isolated ARM64 DiskTree and verify native M5 Pro zink rendering against an inspected llvmpipe reference: 63.2192 dB full-frame PSNR, normalized RMSE 0.0006903.
+- Publish the exact source patch and qualification limits; preserve installed software launchers and global graphics settings.
+
 ## Desktop application graphics compatibility - 2026-11-15
 
 - Identify wgpu's rejection of the nonconformant Borealis Vulkan adapter and Superwhisper's native zink GL inter-stage limit mismatch.
