@@ -9,7 +9,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Kernel | `bringup-ane-start` booted; installed boot binding passed | Remote-built acquisition candidate is live; single-job ANE qualification, not sustained stability |
 | Root | Persistent Arch Linux ARM + Omarchy | Full initial image write/readback passed |
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
-| GPU | Native G17S/Vulkan/zink desktop; isolated patched DiskTree produced hardware-rendered Wayland pixels | Limited four-file GUI proof; prior scheduling-timeout recovery, API conformance, other native GPUI apps and sustained stability remain open |
+| GPU | Shared native Gallium M5 fixes installed for fresh Chrome/Herdr starts; GPU engine counters and pixel readback passed | Basic browser/frontend qualification only; full API conformance, real terminal endurance, video decode and other applications remain unqualified |
 | Panel | Native DCP, full-notch 3456×2234; current observation boot at 60 Hz, 120 Hz offered | No display setting changed during observation; external outputs not qualified |
 | Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
@@ -36,6 +36,66 @@ subsequent normal-default boot has yet been observed.
 See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 
 Obtain and verify a current backup before partitioning or deployment.
+
+## Shared native Gallium fixes and app activation - 2026-11-17
+
+The native Chrome failure was a real Mesa/kernel submission-contract gap:
+the old Gallium path supplied no render-program storage record, while the
+pinned G17 backend's `prepare_command` requires it. The original five-commit
+[Mesa #194 series](https://github.com/aurora-silicon/mesa/pull/194) supplies the
+native M5 path and storage declarations. The current a8e86 UAPI was retained;
+the rebased series with older headers was not used. A source-bound
+[VDM Stream Link fix](https://github.com/aurora-silicon/mesa/pull/276) preserves
+context-relative targets using the already-present helpers.
+
+An unmodified Herdr frontend then selected the M5 GPU but drew controls without
+text. Targeted diagnostics identified `M5_PROGRAM_REJECT stage=4 push range
+shape`: fragment uniform ranges were not dword aligned. The shared compiler
+selector from [Mesa #256](https://github.com/aurora-silicon/mesa/pull/256) fixes
+the M5 family, retaining the native loader's refusal and all kernel validation.
+No Herdr/Chrome-specific rendering exception or fake capability was added.
+
+| Qualification | Observed result |
+| --- | --- |
+| Native renderer | Apple M5 Pro G17S B1, native Gallium OpenGL ES 3.2, not zink/llvmpipe |
+| Shader draw/readback, 16x16 single-sample | 256/256 RGBA pixels exact |
+| Shader draw/resolve/readback, 16x16 four-sample | 256/256 RGBA pixels exact |
+| Shader draw/readback, 256x256 single-sample | 65536/65536 RGBA pixels exact |
+| Chrome WebGL2 / 2D canvas readback | 65536 red pixels / 256 green pixels exact |
+| Owned Chrome WebGL context restoration | Restored within the bound, 65536 blue pixels exact, no GL error |
+| Installed Chrome physical GPU activity | Aurora client 378: vertex 5825454 ns, fragment 18837210 ns |
+| Installed Herdr physical GPU activity | Aurora client 380: vertex 128957 ns, fragment 777331 ns |
+
+Actual browser and frontend pixels were inspected. ANGLE reports a generic
+`AGX G13/G14` label, so hardware identity was established by candidate-library
+maps and kernel vertex/fragment counters, not that marketing string. Herdr's
+test home deliberately hid its core to avoid touching live terminals; the
+setup screen is expected and does not report a missing user installation.
+
+Owner-authorized activation installed a root-owned, non-user-writable prefix
+at `/opt/mesa-j716s-native-20261117` and the shared
+`~/.local/bin/j716s-native-graphics` wrapper. User-local Herdr and Chrome desktop
+entries select it. Fresh starts use native GL; an already-running Herdr GUI or
+Chrome session continues on its existing stack. No active session was restarted.
+Compositor/SDDM graphics, original `/opt/mesa-j716s`, kernel/boot, and baseline
+Vulkan/inference policy remain unchanged. Superwhisper/DiskTree overrides were
+not changed in this activation.
+
+Core library SHA256:
+`c193a8e167de3fa7d98df0dd850a23b1ecd2ac24a109970e8a683dfad3d19843`.
+The reproducible source package is `packaging/mesa-j716s-native/`; upstream
+authorship and licenses remain in the patch headers/source. Rollback restores
+the saved Herdr desktop file and removes only the newly created Chrome override;
+backups are under `work/build/mesa-g17s-native-20261116/launcher-rollback/`.
+This is not complete GLES/Vulkan conformance, video or long-term qualification.
+VA-API initialization still fails; browser feature labels do not prove decode
+or WebGPU computation. No GPU reset/admission bypass or shader-error suppression.
+
+Earlier in this pass, the saved AC profile was changed from performance to
+balanced through Omarchy's stock API; all three governors became schedutil.
+Battery power-saver was retained, and WFI idle was already active. Further
+power, camera, audio, SD and USB work was checkpointed when graphics became
+the explicit priority.
 
 ## Isolated native GPUI/zink rendering - 2026-11-15
 

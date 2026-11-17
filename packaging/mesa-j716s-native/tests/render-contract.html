@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Isolated GPU pixel qualification</title>
+<h1>Native graphics qualification</h1>
+<p>This page uses no network resources, microphone or camera.</p>
+<div style="width:160px;height:160px;border-radius:80px;overflow:hidden;transform:translate(0.25px,0.25px);background:#6699cc"><span style="font-size:24px">Skia glyph and clipped texture surface</span></div>
+<canvas id="gl" width="256" height="256"></canvas>
+<canvas id="skia" width="16" height="16"></canvas>
+<pre id="result">Testing</pre>
+<script>
+const results = {};
+try {
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl2', {antialias: true, preserveDrawingBuffer: true});
+  if (!gl) throw new Error('WebGL2 context unavailable');
+  const debug = gl.getExtension('WEBGL_debug_renderer_info');
+  results.renderer = debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  results.vendor = debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+  gl.clearColor(1, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  const pixels = new Uint8Array(256 * 256 * 4);
+  gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  results.webglError = gl.getError();
+  results.webglExactPixels = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i] === 255 && pixels[i+1] === 0 && pixels[i+2] === 0 && pixels[i+3] === 255)
+      results.webglExactPixels++;
+  }
+  const ctx = document.getElementById('skia').getContext('2d');
+  ctx.fillStyle = '#00ff00';
+  ctx.fillRect(0, 0, 16, 16);
+  const small = ctx.getImageData(0, 0, 16, 16).data;
+  results.canvasExactPixels = 0;
+  for (let i = 0; i < small.length; i += 4) {
+    if (small[i] === 0 && small[i+1] === 255 && small[i+2] === 0 && small[i+3] === 255)
+      results.canvasExactPixels++;
+  }
+  results.pixelsPass = results.webglError === 0 && results.webglExactPixels === 65536 && results.canvasExactPixels === 256;
+} catch (error) {
+  results.pixelsPass = false;
+  results.error = String(error);
+}
+window.graphicsQualification = results;
+document.getElementById('result').textContent = JSON.stringify(results, null, 2);
+</script>

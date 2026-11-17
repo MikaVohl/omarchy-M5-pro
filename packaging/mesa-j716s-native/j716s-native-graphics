@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Native GL for opted-in apps only; compositor and Vulkan compute retain baseline.
+set -euo pipefail
+prefix=/opt/mesa-j716s-native-20261117
+[[ -f "$prefix/lib/libgallium-26.3.0-devel.so" ]] || { echo 'Qualified native Mesa prefix is missing' >&2; exit 1; }
+(( $# > 0 )) || { echo 'Usage: j716s-native-graphics PROGRAM [ARGS...]' >&2; exit 2; }
+unset LIBGL_ALWAYS_SOFTWARE MESA_GL_VERSION_OVERRIDE MESA_GLSL_VERSION_OVERRIDE
+export LD_LIBRARY_PATH="$prefix/lib"
+export LIBGL_DRIVERS_PATH="$prefix/lib/dri"
+export GBM_BACKENDS_PATH="$prefix/lib/gbm"
+export __EGL_VENDOR_LIBRARY_FILENAMES="$prefix/share/glvnd/egl_vendor.d/50_j716s_native.json"
+export __GLX_VENDOR_LIBRARY_NAME=j716s_native
+export MESA_LOADER_DRIVER_OVERRIDE=asahi GALLIUM_DRIVER=asahi ASAHI_M5_BRINGUP=1
+# Do not move existing native Vulkan/inference policy to an unqualified new prefix.
+export VK_DRIVER_FILES=/opt/mesa-j716s/share/vulkan/icd.d/asahi_icd.aarch64.json
+export VK_ICD_FILENAMES="$VK_DRIVER_FILES"
+exec "$@"

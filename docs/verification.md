@@ -740,3 +740,37 @@ camera job is claimed.
   and active user services. Native Vulkan admission was not relaxed. This is
   limited DiskTree hardware rendering, not other apps or sustained stability.
 
+## Shared M5 native Gallium qualification and activation - 2026-11-17
+
+- Researched the supplied M5 integration sources, official Mac packages and
+  fresh exact-J716 evidence. Other-board display/power/camera constants and
+  installers were not copied onto this target.
+- The original Mesa #194 series was matched to pinned a8e86 inputs. Source
+  preparation retained the exact newer Mesa UAPI; missing final patch newline
+  framing was corrected without changing hunks. Added existing-work VDM and
+  M5 dword-uniform selector fixes, preserving kernel admission.
+- Signed Arch compiler-package acquisition failed on missing mirror packages/
+  signature retrieval; no host packages were upgraded. A digest-pinned Fedora
+  compiler container supplied matching LLVM/Clang/translator and genuine
+  OpenCL headers. Private runtime libraries were staged without LLVM aliasing.
+- The real native-GPU shader fixture passed exact 16x16 single/four-sample and
+  256x256 single-sample RGBA readback. No kernel entries during those runs.
+- First native Herdr test had missing text and fragment refusals. Existing
+  fault diagnostics showed push-range shape; the M5 dword selector removed
+  those refusals and restored inspected text/icons/controls. The original
+  installed frontend binary was not rebuilt or patched.
+- Chrome used a separate profile and native candidate. WebGL and canvas pixel
+  checks passed; bounded owned WebGL context restoration passed exact blue
+  readback. Kernel GPU counters, not ANGLE's generic renderer label, proved
+  real hardware use. GPU compositing/rasterization/WebGL classification enabled;
+  no video/WebGPU workload qualification inferred from labels.
+- The root-owned installed prefix matched the tested core SHA256 c193a8e167de3fa7d98df0dd850a23b1ecd2ac24a109970e8a683dfad3d19843.
+  Installed-wrapper shader readback passed, fresh isolated Chrome rendered,
+  and unmodified Herdr frontend pixels were inspected with nonzero GPU time.
+  Gio resolved the actual user-local desktop overrides. Active sessions and
+  compositor/kernel/Vulkan policies remained unchanged.
+- Publication checks apply the complete exported patch sequence to fresh
+  pinned inputs and compare touched source files to the actual tested source.
+  An export-only unrelated hunk was removed before publication; native driver
+  source and installed binary were not changed by that correction.
+

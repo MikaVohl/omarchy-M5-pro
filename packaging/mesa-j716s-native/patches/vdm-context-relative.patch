@@ -1,0 +1,37 @@
+Source-bound M5 Gallium VDM Stream Link backport.
+Target: aurora-silicon/mesa a8e86a80cdc4695d00e7e63b8ebea263e557431b,
+with the original five-commit Mesa #194 series ending at 043a4c58080c4951fea3797fe45fc6898ce77632.
+Upstream: Jens Axboe, 5cb0b3bda26c726a6aab1d1228c8bf6cc3045285,
+https://github.com/aurora-silicon/mesa/pull/276
+License: source file's MIT terms, retained in the Mesa source.
+The existing agx_m5_vdm_compact and agx_vdm_stream_link_core_pack helpers
+already support G17S in this base; Honeykrisp already uses them for this jump.
+Only hunk location is adapted from the upstream patch. No register writes,
+feature advertisement, admission changes, software selection or new constants.
+Upstream hardware evidence is reported G17S/K116s, firmware 27.2, not this J716s/27.3.
+No build, patch-application check or hardware test has been run here.
+
+--- a/src/gallium/drivers/asahi/agx_state.c
++++ b/src/gallium/drivers/asahi/agx_state.c
+@@ -9211,6 +9211,21 @@ agx_ensure_cmdbuf_has_space(struct agx_batch *batch, struct agx_encoder *enc,
+       if (!packed)
+          return;
+ 
++      memcpy(enc->current, link.bytes, link.length);
++   } else if (vdm && agx_chip_g17_m5(dev->chip)) {
++      /* The M5 command processor adds the render-context base to a Stream
++       * Link target, as it does to a PPP payload pointer: an absolute target
++       * is read 0x1000000000 above the new chunk. Honeykrisp makes the same
++       * translation in hk_cmd_buffer_emit_cs_jump(). */
++      uint64_t compact = 0;
++      struct agx_vdm_stream_link_core link;
++      const bool packed = agx_m5_vdm_compact(T.gpu, &compact) &&
++                          agx_vdm_stream_link_core_pack(dev->chip, compact,
++                                                       &link);
++      assert(packed);
++      if (!packed)
++         return;
++
+       memcpy(enc->current, link.bytes, link.length);
+    } else {
+       agx_cs_jump((uint32_t *)enc->current, T.gpu, vdm);

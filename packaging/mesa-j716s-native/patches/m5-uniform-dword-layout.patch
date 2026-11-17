@@ -1,0 +1,21 @@
+M5 native uniform-layout backport from Mesa #256, ddad4a535afb595efb3c7b1780c35dc7e924a32e.
+Target: a8e86 with original Mesa #194 series and VDM fix.
+Only existing M5 selector is added; no G18 branch or loader validation changed.
+
+--- a/src/gallium/drivers/asahi/agx_state.c
++++ b/src/gallium/drivers/asahi/agx_state.c
+@@ -2016,11 +2016,11 @@
+          compiled->g17p_texture_resources
+             ? AGX_ABI_G17P_TEXTURE_POINTER_HALFS
+             : 0;
+-      /* G17P's Ioto loader moves uniform dwords: lay the ranges out so
+-       * that each starts at an even half and covers an even count. */
++      /* G17P and M5 native Ioto loaders move uniform dwords. Keep each range
++       * at an even half offset and count; the native builder rejects other shapes. */
+       NIR_PASS(_, nir, agx_nir_layout_uniforms, compiled,
+                &key.reserved_preamble, uniform_base,
+-               agx_native_graphics(dev));
++               agx_native_graphics(dev) || agx_chip_g17_m5(dev->chip));
+       if (agx_native_graphics(dev))
+          NIR_PASS(_, nir, agx_nir_lower_g17p_storage_records,
+                   texture_descriptor_size);

@@ -285,6 +285,42 @@ Qualification used native zink and an llvmpipe reference without changing
 installed launchers. Build artifacts and captured frames remain private;
 new builds must establish their own adapter identity and rendered correctness.
 
+### Shared native M5 Gallium source package
+
+`packaging/mesa-j716s-native/` carries the actual build recipe, source patches,
+app-native wrapper and bounded shader/browser regression inputs. Copy it into
+an ignored build directory and unpack the pinned Mesa archive into `source/`
+before building; do not build directly in the published package tree.
+
+Base: a8e86a80cdc4695d00e7e63b8ebea263e557431b, archive SHA256
+`fa866896387c27e57263e4f1c7764d3daa3b4d2de7a6d1f04da4ecb25f73b421`.
+The unchanged original #194 commits are b09ad8faaf1f9ec57841280b5af8e348a732bd82,
+8c6175c2fbf238386c358059bc642d81a5a39adc,
+94e1be8c79377fbf4a42f84881b3c8f9fdda8d98,
+4da1c814d2cc94fc0b20b53a613cdb27469b1e43 and
+043a4c58080c4951fea3797fe45fc6898ce77632. Only final newline framing of the
+combined patch was normalized. Its canonical SHA256 is e026660582fd5cbab9fa39a4cd1e6916503802b7a657ae3c2bc831e2848d13b0.
+The VDM target fix is Jens Axboe's 5cb0b3bda26c726a6aab1d1228c8bf6cc3045285
+(#276), using existing M5 helpers. The uniform fix adapts Diljit Singh's
+ddad4a535afb595efb3c7b1780c35dc7e924a32e (#256): the existing M5 selector is
+added, without importing a newer G18 branch or dropping shape validation.
+Existing fault-trace diagnostics were exposed by a named debug option.
+
+The base Fedora image digest is f01112b9a1f1d0504ad962d9adfa401425033f8ab067e0a821904ebdde5b8ca5.
+Signed compiler packages remain inventoried privately. LLVM/Clang 21.1.8 and
+matching translator 21.1 preserve the full LLVM CPU-stage/tessellation profile;
+no LLVM-off narrowed build. Authentic Clang headers are mapped into Mesa's
+expected resource layout only within the compiler image. Its private LLVM
+21.1, libxml2.so.2 and libexpat.so.1 runtime copies are not host-library aliases.
+
+The build checks immutable patch hashes and retains UAPI SHA256
+75e496826dae573b5135b62607c1397a13d7d3a84fc5e15d0680df230b84e6a3.
+G17S execution was measured separately by kernel engine counters and exact
+RGBA readback. User-local app activation keeps the original Vulkan/compositor
+prefix; advanced APIs and other applications need their own actual proof.
+Upstream Mesa source/patches retain their MIT notices and authorship; no Mesa
+or LLVM binaries are redistributed by this repository.
+
 ## Licensing and attribution
 
 - Original integration scripts/docs are covered by the scoped root [`LICENSE`](../LICENSE).

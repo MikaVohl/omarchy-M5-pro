@@ -1,6 +1,14 @@
 # Changelog
 
 
+## Shared native M5 Gallium fixes and app activation - 2026-11-17
+
+- Integrate existing native M5 render/storage and VDM fixes against the exact pinned Mesa/UAPI, leaving kernel validation intact.
+- Diagnose and fix the shared M5 uniform dword-layout gap that dropped Herdr text; no application-specific renderer patch.
+- Verify real GPU shader/MSAA readback, Chrome pixels and context restoration, and inspected unmodified Herdr frontend rendering.
+- Install an immutable app-only native prefix and switch fresh Herdr/Chrome launches with rollback; preserve active sessions, compositor and Vulkan/inference policy.
+- Retain truthful conformance/video/endurance limits and publish exact source inputs, build recipe and hardware regression fixtures.
+
 ## Native GPUI hardware rendering candidate - 2026-11-15
 
 - Audit all native GPUI shader interfaces and request their actual six-variable minimum without changing driver capabilities or Vulkan admission.

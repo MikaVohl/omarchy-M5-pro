@@ -1,0 +1,13 @@
+Expose existing fail-closed native program diagnostics only; no rendering policy changes.
+Target: a8e86 native Gallium candidate; source MIT terms retained.
+
+--- a/src/asahi/lib/agx_device.c
++++ b/src/asahi/lib/agx_device.c
+@@ -90,6 +90,7 @@
+ /* clang-format off */
+ static const struct debug_named_value agx_debug_options[] = {
+    {"trace",     AGX_DBG_TRACE,    "Trace the command stream"},
++   {"faulttrace", AGX_DBG_FAULTTRACE, "Explain native program and draw refusals"},
+    {"bodump",    AGX_DBG_BODUMP,   "Periodically dump live BOs"},
+    {"no16",      AGX_DBG_NO16,     "Disable 16-bit support"},
+    {"perf",      AGX_DBG_PERF,     "Print performance warnings"},
