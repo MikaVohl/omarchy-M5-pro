@@ -3,7 +3,7 @@
   "description": "Published source files only; generated build and machine receipts are excluded. Hashes provide integrity, not independent signing or hardware qualification.",
   "files": {
     ".gitignore": "530e0b4c185a9e7606b0318e09c237dfa8209d768b6c21ac1ba8f9560154cce6",
-    "CHANGELOG.md": "99d075dd4d481b5cd4ff816f2480a2fe1c11d851511fe24178790dd7d0ef462d",
+    "CHANGELOG.md": "dc24cebf081c1533774b3bbf59667f7a6669792dafedb7a2a35215cbeef126e1",
     "LICENSE": "f70a9b5041f4af115ee70b932337181a7f72ecf2ab68e3a76871525e73be5945",
     "LICENSES/Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "LICENSES/Asahi-MIT.txt": "11ca423a564b52d3b7f260398baa20d016c25ae180fbdd0067c27b7d1ed7b420",
@@ -14,7 +14,7 @@
     "Makefile": "b5c571535a3c8bdd5248e1448f4cf000599f24d59a86278ba4619b65688cf2e7",
     "README.md": "a5a78551841d83573016328ae540e37898100d5d60c73b3fba96813a68d84906",
     "docs/console.md": "d72407c8ad45f0c04bb982426c3d934b6a4e94c5196a42185df96342932fb5b2",
-    "docs/hardware-status.md": "fd2cddc5c24b843fdb109f7183a51c984db3039b4ef1e2cbb777a33bf7ac9722",
+    "docs/hardware-status.md": "3f8d9c5013900d98faf930186f858ebb48f960475c5a6377e51bfa443d723b19",
     "docs/provenance.md": "343dbf4e53be00c525bb42b7a3a861be86e8d13374d8626e1e8e746ded9b259b",
     "packaging/mesa-j716s-native/Dockerfile": "cfcc1b0459d37f797509851919a409a992965cb0f8af789baff7cb0218d93655",
     "packaging/mesa-j716s-native/build-candidate.sh": "671888a82ce7dc587fe24238918f1f8ec560e10148c0184867e96f6254902894",

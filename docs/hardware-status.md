@@ -11,7 +11,7 @@ This is a source release of a working bring-up, not a supported installer or a d
 | Owner setup | Physical tty1 account/password; authenticated SDDM login | No default credentials, forced SSH, or passwordless sudo |
 | GPU | Shared native Gallium M5 fixes installed for fresh Chrome/Herdr starts; GPU engine counters and pixel readback passed | Basic browser/frontend qualification only; full API conformance, real terminal endurance, video decode and other applications remain unqualified |
 | Panel | Native DCP, full-notch 3456×2234; current observation boot at 60 Hz, 120 Hz offered | No display setting changed during observation; external outputs not qualified |
-| Keyboard/trackpad | Physical interaction verified | Board-matched trackpad firmware required |
+| Keyboard/trackpad | Physical interaction verified; tap-to-click disabled for deliberate press-only clicks, typing suppression retained | T6050 firmware palm classification is not enabled; palm/thumb threshold tuning requires contact measurements |
 | Network | Wi-Fi association worked | No Wi-Fi performance, roaming, or Bluetooth qualification |
 | Bluetooth | `touchid-sco-spk-hfp` booted; legacy setup selection confirmed; AirPods connected | Legacy mSBC/transparent and CVSD setup both rejected with 0x11 before SCO traffic; both recorders received zero samples; microphone remains unavailable |
 | USB-C / USB4 | Left-front/right Type-C, DWC3 and PHY bind; right ACIO binds | Unplugged device role intentionally defers xHCI; no physical attach/PD/DP/tunnel qualification |
@@ -36,6 +36,37 @@ subsequent normal-default boot has yet been observed.
 See [setup](setup.md#experimental-open-network-wi-fi-candidate).
 
 Obtain and verify a current backup before partitioning or deployment.
+
+## Trackpad palm rejection and press-only clicking
+
+The current Apple MTP touchpad is correctly classified as internal, 157x96 mm,
+with matching Apple MTP quirks. The keyboard matches internal-integration
+quirks, and disable-while-typing is enabled. Hyprland nevertheless enabled
+tap-to-click by default, so light contacts could click without a press.
+
+At the owner's request, `~/.config/hypr/input.lua` now sets
+`tap_to_click = false`. A real compositor reload reported no configuration
+errors; the live tap option became false while typing suppression stayed true.
+Haptic press/release thresholds stayed 120/75; scrolling settings were retained.
+The earlier dashed option spelling was rejected by the Lua interface and was
+corrected to its accepted underscore spelling before verification.
+The previous input file is saved at
+`work/build/trackpad-press-only/input.lua.before`.
+
+This is a click-behavior fix, not complete palm rejection. The pinned MTP driver
+trusts controller palm classes only on T6041, not T6050. This device therefore
+does not expose usable MT_TOOL_PALM reports. Its pressure-pad classification
+also deliberately disables libinput pressure-based palm detection; matched
+contact-size detection uses the generic 1600 threshold, with no measured thumb
+size threshold. Physical pressure-clicks are not suppressed by libinput's
+disable-while-typing behavior.
+
+The [same-board trackpad research](https://github.com/rolotrealanis98/m5pro-linux/blob/70bbffcc160b02903058a7a82a065ef047affdd9/contrib/pending/platform/trackpad-feel/NOTES.md)
+identifies the missing firmware class path, but its T6050 class meanings still
+need finger/thumb/palm measurements before enabling that path or tuning size
+thresholds. No raw contact or keyboard recording, kernel palm override or
+speculative threshold was applied in this pass. See
+[libinput palm detection](https://wayland.freedesktop.org/libinput/doc/latest/palm-detection.html).
 
 ## Shared native Gallium fixes and app activation - 2026-11-17
 

@@ -1,6 +1,11 @@
 # Changelog
 
 
+## Trackpad click behavior and palm diagnosis
+
+- Disable tap-to-click at the owner's request, retaining deliberate haptic pressure-clicking, scrolling and typing suppression; verify accepted live Lua/compositor settings.
+- Confirm internal Apple MTP quirks and the remaining T6050 firmware-palm/pressure-detection limitations; do not enable unmeasured palm classes or guess contact thresholds.
+
 ## Shared native M5 Gallium fixes and app activation - 2026-11-17
 
 - Integrate existing native M5 render/storage and VDM fixes against the exact pinned Mesa/UAPI, leaving kernel validation intact.
