@@ -18,6 +18,7 @@ MANIFEST = BASE / "inputs.json"
 ATTENTION = ("attention-accumulator.patch", "44feac04fa210e9c443fbebf58b9bb705f914acae9e89b056734b58929e22187")
 BOREALIS = ("borealis-matmul.patch", "1873d56784bbfea75468d2051baa895a69208d9705233fd4a19a43bd6dbee737")
 GEMV = ("borealis-gemv.patch", "495f2a67e38da573b259eeb7844fd2828fee70d5ddb65a5dfaf43ba195cc6e55")
+Q4_GROUPED = ("borealis-q4-grouped.patch", "8c2d80910d8c781d4a19e9602cbf336fa8242c16575af6bf58d50de4d886ea9c")
 
 
 def sha256(path):
@@ -133,8 +134,8 @@ def main():
     parser.add_argument("--verify-only", action="store_true", help="No downloads or source extraction")
     parser.add_argument("--route", choices=("cpu", "vulkan"), default="vulkan")
     parser.add_argument("--toolchain", action="store_true", help="Require the pinned installed toolchain")
-    parser.add_argument("--variant", choices=("stock", "attention", "borealis", "borealis-gemv"), default="stock",
-                        help="isolated Vulkan source variant; borealis-gemv adds experimental single-token tuning")
+    parser.add_argument("--variant", choices=("stock", "attention", "borealis", "borealis-gemv", "borealis-q4-grouped"),
+                        default="stock", help="isolated Vulkan source variant")
     parser.add_argument("--with-7b", action="store_true", help="also verify or fetch the 4.68 GB benchmark model")
     args = parser.parse_args()
     if args.fetch and args.verify_only:
@@ -142,7 +143,8 @@ def main():
     if args.variant != "stock" and args.route != "vulkan":
         parser.error("Source variants are Vulkan-only")
     patches = {"stock": (), "attention": (ATTENTION,), "borealis": (ATTENTION, BOREALIS),
-               "borealis-gemv": (ATTENTION, BOREALIS, GEMV)}[args.variant]
+               "borealis-gemv": (ATTENTION, BOREALIS, GEMV),
+               "borealis-q4-grouped": (ATTENTION, BOREALIS, Q4_GROUPED)}[args.variant]
     work = args.workspace.resolve()
     if not work.is_relative_to((BASE / "../../work/build").resolve()):
         parser.error("Workspace must stay inside this checkout's private work/build directory")

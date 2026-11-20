@@ -17,6 +17,7 @@ import time
 
 BASE = Path(__file__).resolve().parent
 WORK = (BASE / '../../work/build').resolve()
+EXPERIMENTS = ('borealis-gemv', 'borealis-q4-grouped')
 # Bounded subsets of the pinned upstream eval fixtures. Keep matvec, matmul,
 # routed experts, attention, gather and norm independently accountable.
 CONTIGUOUS = r'bs=\[1,1\],nr=\[1,1\],per=\[0,1,2,3\],k_v=0,o=1,'
@@ -147,11 +148,12 @@ def build_operator(work, variant, run, tools, digest):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('workspace', type=Path, help='Private Vulkan candidate workspace')
-    parser.add_argument('variant', choices=('borealis', 'borealis-gemv'))
+    parser.add_argument('variant', choices=('borealis', *EXPERIMENTS))
     parser.add_argument('compute_receipt', type=Path)
     parser.add_argument('icd', type=Path)
     parser.add_argument('validation_layer_dir', type=Path)
-    parser.add_argument('--timing-peer', type=Path, help='Compare this borealis build against a private borealis-gemv workspace')
+    parser.add_argument('--timing-peer', type=Path, help='Compare this borealis build against a private experimental workspace')
+    parser.add_argument('--timing-peer-variant', choices=EXPERIMENTS, default='borealis-gemv')
     args = parser.parse_args()
     work, receipt, icd, layer_dir = (p.resolve(strict=True) for p in
                                      (args.workspace, args.compute_receipt, args.icd, args.validation_layer_dir))
@@ -159,7 +161,7 @@ def main():
         parser.error('Workspace must remain inside work/build')
     peer = args.timing_peer.resolve(strict=True) if args.timing_peer else None
     if peer and (peer == work or not peer.is_relative_to(WORK) or args.variant != 'borealis'):
-        parser.error('Timing requires a borealis baseline and a separate private borealis-gemv workspace')
+        parser.error('Timing requires a borealis baseline and a separate private experimental workspace')
     guard = runpy.run_path(str(BASE / 'guard-vulkan.py'))
     admitted = guard['admit'](receipt, icd, 'Vulkan0')
     digest = guard['digest']
@@ -177,7 +179,7 @@ def main():
     if peer:
         peer_run = run / 'peer'
         peer_run.mkdir()
-        peer_binary, peer_hashes = build_operator(peer, 'borealis-gemv', peer_run, tools, digest)
+        peer_binary, peer_hashes = build_operator(peer, args.timing_peer_variant, peer_run, tools, digest)
     helpers = runpy.run_path(str(BASE / 'compare-candidate.py'))
     sensors = helpers['sensor_paths']()
     env = {**tools, 'VK_DRIVER_FILES': str(icd), 'LD_LIBRARY_PATH': str(lib.parent), 'ASAHI_M5_BRINGUP': '1',
@@ -192,6 +194,7 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if peer:
             report['peer_hashes'] = peer_hashes
+            report['peer_variant'] = args.timing_peer_variant
             report['timing'], passed = time_pair(run, {'baseline': binary, 'candidate': peer_binary}, env, sensors, helpers)
         else:
             for label, op, pattern in CASES:

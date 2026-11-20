@@ -2,7 +2,7 @@
 # Build-only. No model execution, server, global installs or capability overrides.
 set -euo pipefail
 base=$(cd -- "$(dirname -- "$0")" && pwd)
-(( $# >= 1 && $# <= 3 )) || { echo 'Usage: build-candidate.sh cpu|vulkan [WORKSPACE [stock|attention|borealis|borealis-gemv]]' >&2; exit 2; }
+(( $# >= 1 && $# <= 3 )) || { echo 'Usage: build-candidate.sh cpu|vulkan [WORKSPACE [stock|attention|borealis|borealis-gemv|borealis-q4-grouped]]' >&2; exit 2; }
 route=$1
 [[ $route == cpu || $route == vulkan ]] || { echo 'Expected cpu or vulkan' >&2; exit 2; }
 workspace=$(realpath -m "${2:-"$base/../../work/build/llama-j716s"}")
