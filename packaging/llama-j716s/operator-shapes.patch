@@ -3,6 +3,8 @@ Subject: test-backend-ops: cover dense projection rows around a dispatch boundar
 Use synthetic data and upstream's CPU reference. Deliberately straddle the
 experimental workgroup boundary and include larger controls, odd row counts
 and both short and long reductions. This patch changes only the test tool.
+Performance mode times one synchronized graph at a time, not repeated
+copies of the same output node in a submission. Export host time and count.
 
 --- a/tests/test-backend-ops.cpp
 +++ b/tests/test-backend-ops.cpp
@@ -15,10 +17,61 @@ and both short and long reductions. This patch changes only the test tool.
              std::uniform_real_distribution<float> distribution(min, max);
              for (size_t i = start; i < end; i++) {
                  data[i] = distribution(gen);
-@@ -10543,6 +10543,20 @@
- static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
-     std::vector<std::unique_ptr<test_case>> test_cases;
-     std::default_random_engine rng(0);
+@@ -1151,6 +1151,8 @@
+             "op_params",
+             "supported",
+             "error_message",
++            "time_us",
++            "n_runs",
+             "test_mode",
+             "backend_reg_name",
+             "backend_name",
+@@ -1727,29 +1729,8 @@
+             return false;
+         }
+ 
+-        // determine number of runs
+-        int n_runs;
+-        bool is_cpu = ggml_backend_dev_type(ggml_backend_get_device(backend)) == GGML_BACKEND_DEVICE_TYPE_CPU;
+-        if (op_flops(out) > 0) {
+-            // based on flops
+-            const uint64_t GFLOP = 1000 * 1000 * 1000;
+-            const uint64_t target_flops_cpu =   8ULL * GFLOP;
+-            const uint64_t target_flops_gpu = 100ULL * GFLOP;
+-            uint64_t target_flops = is_cpu ? target_flops_cpu : target_flops_gpu;
+-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_flops / op_flops(out)) + 1;
+-        } else {
+-            // based on memory size
+-            const size_t GB = 1ULL << 30;
+-            const size_t target_size_cpu =  8 * GB;
+-            const size_t target_size_gpu = 32 * GB;
+-            size_t target_size = is_cpu ? target_size_cpu : target_size_gpu;
+-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
+-        }
+-
+-        // duplicate the op
+-        for (int i = 1; i < n_runs; i++) {
+-            ggml_graph_add_node(gf, out);
+-        }
++        // Measure one full, synchronized submission at a time.
++        constexpr int n_runs = 1;
+ 
+         // calculate memory
+         size_t mem = n_runs * op_size(out);
+@@ -1789,7 +1770,7 @@
+ 
+             // re-draw any data-dependent inputs (expert ids) outside the timed region
+             reinit_perf_iter(ctx.get());
+-        } while (total_time_us < 1000*1000); // run for at least 1 second
++        } while (total_time_us < 150000);
+ 
+         // Create test result
+         double avg_time_us      = (double) total_time_us / total_runs;
+@@ -10539,13 +10520,29 @@
+ #pragma optimize("", off)
+ #endif
+ 
++static void append_j716s_gemv_cases(std::vector<std::unique_ptr<test_case>> & test_cases) {
 +
 +    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0}) {
 +        for (int64_t m : {8191, 8192, 8193, 12288, 18944}) {
@@ -31,8 +84,24 @@ and both short and long reductions. This patch changes only the test tool.
 +            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 1537, 1, k, {1,1}, {1,1}));
 +        }
 +    }
++}
 +
-+    // Preserve all upstream fixtures below this bounded added sweep.
+ // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
+ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+     std::vector<std::unique_ptr<test_case>> test_cases;
+     std::default_random_engine rng(0);
++    append_j716s_gemv_cases(test_cases);
  
      // unary ops
      // TODO: add GGML_UNARY_OP_SOFTPLUS test that is sensitive to using `log1p(exp(x))` vs `log(exp(x) + 1)`
+     for (ggml_type type : {GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_BF16}) {
+         for (int v : {0, 1}) {
+             for (int op = 0; op < GGML_UNARY_OP_COUNT; op++) {
+@@ -13426,6 +13423,7 @@
+ // Test cases for performance evaluation: should be representative of real-world use cases
+ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
+     std::vector<std::unique_ptr<test_case>> test_cases;
++    append_j716s_gemv_cases(test_cases);
+ 
+     for (float n : {128.0f, 4096.0f, 32768.0f, 1048576.0f}) {
+         test_cases.emplace_back(new test_arange(GGML_TYPE_F32, 0.0f, n, 1.0f));
