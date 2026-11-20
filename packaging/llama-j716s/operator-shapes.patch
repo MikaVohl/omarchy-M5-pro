@@ -1,0 +1,38 @@
+Subject: test-backend-ops: cover dense projection rows around a dispatch boundary
+
+Use synthetic data and upstream's CPU reference. Deliberately straddle the
+experimental workgroup boundary and include larger controls, odd row counts
+and both short and long reductions. This patch changes only the test tool.
+
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -87,7 +87,7 @@
+         static const size_t n_threads = std::max<size_t>(1, std::min<size_t>(nels/1024, std::min<size_t>(4, N_THREADS/2)));
+ 
+         auto init_thread = [&](size_t start, size_t end) {
+-            thread_local std::default_random_engine gen(std::random_device{}());
++            thread_local std::default_random_engine gen(0x5a17u);
+             std::uniform_real_distribution<float> distribution(min, max);
+             for (size_t i = start; i < end; i++) {
+                 data[i] = distribution(gen);
+@@ -10543,6 +10543,20 @@
+ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
+     std::vector<std::unique_ptr<test_case>> test_cases;
+     std::default_random_engine rng(0);
++
++    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0}) {
++        for (int64_t m : {8191, 8192, 8193, 12288, 18944}) {
++            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, 1, 1024, {1,1}, {1,1}));
++        }
++        for (int64_t m : {3968, 12288, 18944}) {
++            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, 1, 3584, {1,1}, {1,1}));
++        }
++        for (int64_t k : {768, 1024, 1280}) {
++            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 1537, 1, k, {1,1}, {1,1}));
++        }
++    }
++
++    // Preserve all upstream fixtures below this bounded added sweep.
+ 
+     // unary ops
+     // TODO: add GGML_UNARY_OP_SOFTPLUS test that is sensitive to using `log1p(exp(x))` vs `log(exp(x) + 1)`
