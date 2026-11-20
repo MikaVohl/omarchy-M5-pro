@@ -1,0 +1,54 @@
+Subject: ggml-vulkan: measure Asahi matmul tuning on Borealis G17S
+
+Borealis reports its own driver ID, so this exact M5 Pro device skipped
+both Honeykrisp tuning branches. Use the real properties to select the
+existing policy without altering Vulkan capabilities or conformance.
+Keep this isolated until the stock comparison and numerical checks pass.
+
+--- a/ggml/src/ggml-vulkan/ggml-vulkan-types.h
++++ b/ggml/src/ggml-vulkan/ggml-vulkan-types.h
+@@ -711,6 +711,7 @@
+     vk::Device device;
+     uint32_t vendor_id;
+     vk::DriverId driver_id;
++    bool borealis_g17s = false;
+     vk_device_architecture architecture;
+     std::unique_ptr<vk_queue> compute_queue;
+     std::unique_ptr<vk_queue> transfer_queue;
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -672,7 +672,7 @@
+ 
+ #if VK_HEADER_VERSION >= 287
+     // Roll the mul_mm BK loop on Asahi Linux. Skip bf16 and the mul_mmq pipelines.
+-    if (device->driver_id == vk::DriverId::eMesaHoneykrisp &&
++    if ((device->driver_id == vk::DriverId::eMesaHoneykrisp || device->borealis_g17s) &&
+         pipeline->name.rfind("matmul", 0) == 0 &&
+         pipeline->name.find("bf16") == std::string::npos &&
+         pipeline->name.find("q8_1") == std::string::npos) {
+@@ -4430,6 +4430,13 @@
+         device->properties = props2.properties;
+         device->vendor_id = device->properties.vendorID;
+         device->driver_id = driver_props.driverID;
++        // Borealis's registry assigns 35; the pinned upstream Vulkan headers
++        // do not name that downstream enum. Check the name and PCI-style
++        // identity too, so the numeric constant alone never selects tuning.
++        device->borealis_g17s = device->driver_id == static_cast<vk::DriverId>(35) &&
++                              strcmp(driver_props.driverName.data(), "Borealis") == 0 &&
++                              device->vendor_id == 0x10005 && device->properties.deviceID == 0x6050 &&
++                              strcmp(device->properties.deviceName.data(), "Apple M5 Pro (G17S B1)") == 0;
+ 
+         device->external_memory_host = device->external_memory_host && ggml_vk_external_memory_host_usable(device->driver_id);
+ 
+@@ -5114,9 +5121,8 @@
+             }
+ 
+ #if VK_HEADER_VERSION >= 287
+-            // Honeykrisp driver for Asahi Linux doesn't report VK_VENDOR_ID_APPLE.
+-            // Check for Honeykrisp driver and force same configuration as the VK_VENDOR_ID_APPLE case.
+-            if (device->driver_id == vk::DriverId::eMesaHoneykrisp) {
++            // These Apple GPU drivers do not report VK_VENDOR_ID_APPLE.
++            if (device->driver_id == vk::DriverId::eMesaHoneykrisp || device->borealis_g17s) {
+                 device->mul_mat_l[i] = false;
+                 device->mul_mat_m[i] = true;
+                 device->mul_mat_s[i] = false;

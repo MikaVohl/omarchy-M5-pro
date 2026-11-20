@@ -1,0 +1,47 @@
+Subject: ggml-vulkan: respect selected CM1 accumulation in P times V
+
+The FP32 Flash Attention variant uses FP32 for Q times K but incorrectly
+uses the FP16 operand type for P times V. On G17S that requests a matrix
+shape the driver does not advertise (10163 and 10060). Keep the FP16
+inputs, use the selected accumulator for both multiply-adds, and count
+shared storage at that precision before admitting the kernel.
+
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_base.glsl
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_base.glsl
+@@ -97,7 +97,11 @@
+ #if defined(BFLOAT16)
+ #define O_TYPE float
+ #define O_TYPEV4 vec4
++#elif defined(COOPMAT)
++// The CM1 variant is selected for this accumulator type, not FLOAT_TYPE.
++#define O_TYPE ACC_TYPE
++#define O_TYPEV4 ACC_TYPEV4
+-#else
++#else
+ #define O_TYPE FLOAT_TYPE
+ #define O_TYPEV4 FLOAT_TYPEV4
+ #endif
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_cm1.comp
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/flash_attn_cm1.comp
+@@ -630,7 +630,7 @@
+         [[unroll]] for (uint32_t r = 0; r < rows_per_thread; ++r) {
+             Of[r][d_local] *= O_TYPE(Lfrcp[r]);
+ #if defined(FLOAT_TYPE_MAX)
+-            Of[r][d_local] = clamp(Of[r][d_local], -FLOAT_TYPE_MAX, FLOAT_TYPE_MAX);
++            Of[r][d_local] = clamp(Of[r][d_local], -O_TYPE(FLOAT_TYPE_MAX), O_TYPE(FLOAT_TYPE_MAX));
+ #endif
+         }
+     }
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -8394,8 +8394,8 @@
+     const uint32_t vsh_stride = MatBc / 4 * row_split;
+     const uint32_t ksh = ((kvshstride >= vsh_stride) ? (Bc * kvshstride) : (Bc * vsh_stride)) * f16vec4;
+ 
+-    // BF16 PVMat accumulator is f32 (no bf16 accumulator support), so pvsh is vec4 (16 bytes)
+-    const uint32_t pvsh_elem_size = (k_type == GGML_TYPE_BF16) ? 16u : f16vec4;
++    // Match O_TYPEV4 in the CM1 shader, including the BF16 path.
++    const uint32_t pvsh_elem_size = (k_type == GGML_TYPE_BF16 || f32acc) ? 16u : f16vec4;
+     const uint32_t osh_stride = params.row_split * MatBr / 4;
+     const uint32_t pvsh = MatBc * osh_stride * pvsh_elem_size;
+ 

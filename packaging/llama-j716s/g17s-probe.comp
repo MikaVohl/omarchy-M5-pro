@@ -1,0 +1,27 @@
+#version 450
+layout(push_constant) uniform Args { uint value; } args;
+layout(set = 0, binding = 1, std430) buffer Result {
+#ifdef CHAIN
+    uint data[];
+#else
+    uvec4 data[];
+#endif
+} result;
+#ifdef CHAIN
+layout(local_size_x = 1) in;
+void main() {
+    result.data[args.value] = result.data[args.value] * 1664525u + 1013904223u;
+}
+#else
+layout(local_size_x = 128) in;
+layout(set = 0, binding = 0, std430) readonly buffer Source { uvec4 data[]; } source;
+void main() {
+    const uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    const uint lane = gl_GlobalInvocationID.x;
+    uvec4 sum = uvec4(0);
+    for (uint i = lane; i < args.value; i += stride) {
+        sum += source.data[i];
+    }
+    result.data[lane] = sum;
+}
+#endif

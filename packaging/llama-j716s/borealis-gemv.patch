@@ -1,0 +1,20 @@
+Subject: ggml-vulkan: try wider G17S single-token K-quant workgroups
+
+For dense Q4_K/Q6_K matrix-vector work with long inner dimensions, try
+splitting the inner product across four subgroups using the existing
+hybrid reduction. Match the real G17S identity from the prefill patch.
+Do not select this for MoE, batched GEMM, integer-dot, or other GPUs.
+
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -5898,6 +5898,10 @@
+ 
+     // heuristic to choose workgroup size
+     uint32_t dmmv_wg = DMMV_WG_SIZE_SUBGROUP;
++    if (ctx->device->borealis_g17s && num_cols == 1 && k >= 1024 && m <= 8192 &&
++        b_type != GGML_TYPE_Q8_1 && (a_type == GGML_TYPE_Q4_K || a_type == GGML_TYPE_Q6_K)) {
++        dmmv_wg = DMMV_WG_SIZE_LARGE;
++    }
+     if ((ctx->device->vendor_id == VK_VENDOR_ID_NVIDIA && ctx->device->architecture != vk_device_architecture::NVIDIA_PRE_TURING) || ctx->device->vendor_id == VK_VENDOR_ID_INTEL) {
+         // Prefer larger workgroups when M is small, to spread the work out more
+         // and keep more SMs busy.
